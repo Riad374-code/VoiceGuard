@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -28,9 +29,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.guardvoice.ui.components.BrandHeader
 import com.guardvoice.ui.model.AppDestination
-import com.guardvoice.ui.screens.HomeScreen
+import com.guardvoice.ui.screens.BillingScreen
+import com.guardvoice.ui.screens.DashboardScreen
 import com.guardvoice.ui.screens.OverlayScreen
 import com.guardvoice.ui.screens.SetupScreen
+import com.guardvoice.ui.screens.SettingsScreen
 import com.guardvoice.ui.screens.SummaryScreen
 import com.guardvoice.ui.theme.GuardColors
 import com.guardvoice.ui.theme.GuardSpace
@@ -60,8 +63,10 @@ fun GuardVoiceApp() {
             )
             when (destination) {
                 AppDestination.Setup -> SetupScreen(onNavigate = navigate)
-                AppDestination.Home -> HomeScreen(onNavigate = navigate)
+                AppDestination.Dashboard -> DashboardScreen(onNavigate = navigate)
                 AppDestination.Overlay -> OverlayScreen(onNavigate = navigate)
+                AppDestination.Billing -> BillingScreen()
+                AppDestination.Settings -> SettingsScreen()
                 AppDestination.Summary -> SummaryScreen(onNavigate = navigate)
             }
         }
@@ -76,7 +81,9 @@ private fun AppChrome(
     Column(verticalArrangement = Arrangement.spacedBy(GuardSpace.Medium)) {
         BrandHeader()
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(GuardSpace.Small),
             verticalAlignment = Alignment.CenterVertically
         ) {

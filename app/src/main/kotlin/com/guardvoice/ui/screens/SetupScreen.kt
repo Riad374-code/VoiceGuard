@@ -53,7 +53,7 @@ fun SetupScreen(onNavigate: (AppDestination) -> Unit) {
                     PrimaryAction(
                         modifier = Modifier.weight(1f),
                         text = "Open console",
-                        onClick = { onNavigate(AppDestination.Home) }
+                        onClick = { onNavigate(AppDestination.Dashboard) }
                     )
                     SecondaryAction(
                         modifier = Modifier.weight(1f),

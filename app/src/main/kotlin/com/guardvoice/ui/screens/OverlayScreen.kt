@@ -116,7 +116,7 @@ private fun MockDialerBackground() {
             color = GuardColors.Surface.copy(alpha = 0.68f)
         )
         Text(
-            text = "+994 50 214 78 61",
+            text = "Unsaved caller",
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Black,
             color = GuardColors.Surface
@@ -206,12 +206,20 @@ private fun LiveVerdictPopup(onFinish: () -> Unit) {
             riskLevel = analysis.riskLevel
         )
         Column(verticalArrangement = Arrangement.spacedBy(GuardSpace.XSmall)) {
-            analysis.reasons.forEach { reason ->
+            if (analysis.reasons.isEmpty()) {
                 Text(
-                    text = "- $reason",
+                    text = "Reasons will appear after enough speech is analyzed.",
                     style = MaterialTheme.typography.bodySmall,
                     color = GuardColors.InkMuted
                 )
+            } else {
+                analysis.reasons.forEach { reason ->
+                    Text(
+                        text = "- $reason",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = GuardColors.InkMuted
+                    )
+                }
             }
         }
         PrimaryAction(

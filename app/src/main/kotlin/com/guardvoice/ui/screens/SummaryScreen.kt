@@ -13,56 +13,34 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
 import com.guardvoice.ui.components.AppSurface
+import com.guardvoice.ui.components.BreathingWave
 import com.guardvoice.ui.components.PrimaryAction
-import com.guardvoice.ui.components.RiskMeter
 import com.guardvoice.ui.components.SecondaryAction
 import com.guardvoice.ui.components.SectionLabel
-import com.guardvoice.ui.components.StatusPill
-import com.guardvoice.ui.components.TranscriptLine
 import com.guardvoice.ui.model.AppDestination
-import com.guardvoice.ui.model.RiskLevel
-import com.guardvoice.ui.model.demoAnalysis
 import com.guardvoice.ui.theme.GuardColors
 import com.guardvoice.ui.theme.GuardRadius
 import com.guardvoice.ui.theme.GuardSpace
 
 @Composable
 fun SummaryScreen(onNavigate: (AppDestination) -> Unit) {
-    val analysis = demoAnalysis.copy(
-        riskLevel = RiskLevel.Scam,
-        riskScore = 72,
-        transcript = "The caller claimed to represent bank security, demanded immediate verification, and asked for card details before the call ended."
-    )
-
     Column(verticalArrangement = Arrangement.spacedBy(GuardSpace.Large)) {
         AppSurface {
             Column(verticalArrangement = Arrangement.spacedBy(GuardSpace.Large)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        SectionLabel(text = "Call result")
-                        Text(
-                            text = analysis.caller,
-                            style = MaterialTheme.typography.headlineSmall,
-                            fontWeight = FontWeight.Black,
-                            color = GuardColors.Ink
-                        )
-                    }
-                    StatusPill(
-                        text = analysis.riskLevel.label,
-                        riskLevel = analysis.riskLevel
-                    )
-                }
-                RiskMeter(
-                    score = analysis.riskScore,
-                    riskLevel = analysis.riskLevel
+                SectionLabel(text = "Call result")
+                Text(
+                    text = "No completed call analysis yet.",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Black,
+                    color = GuardColors.Ink
                 )
-                TranscriptLine(text = analysis.transcript)
-                ReasonStack(reasons = analysis.reasons)
+                Text(
+                    text = "After the call services and AI analyzer are connected, this screen will show the final verdict, reasons, transcript summary, and actions for the detected unsaved number.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = GuardColors.InkMuted
+                )
+                EmptyResultPanel()
             }
         }
 
@@ -70,20 +48,20 @@ fun SummaryScreen(onNavigate: (AppDestination) -> Unit) {
             Column(verticalArrangement = Arrangement.spacedBy(GuardSpace.Medium)) {
                 SectionLabel(text = "Next actions")
                 Text(
-                    text = "The UI reserves space for blocking and reporting, but these buttons are mock actions until call-log and backend logic are added.",
+                    text = "Block, report, delete transcript, and save-contact actions are reserved here for the business logic phase.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = GuardColors.InkMuted
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(GuardSpace.Small)) {
-                    PrimaryAction(
-                        modifier = Modifier.weight(1f),
-                        text = "Block number",
-                        onClick = { onNavigate(AppDestination.Home) }
-                    )
                     SecondaryAction(
                         modifier = Modifier.weight(1f),
-                        text = "Back home",
-                        onClick = { onNavigate(AppDestination.Home) }
+                        text = "Dashboard",
+                        onClick = { onNavigate(AppDestination.Dashboard) }
+                    )
+                    PrimaryAction(
+                        modifier = Modifier.weight(1f),
+                        text = "Preview popup",
+                        onClick = { onNavigate(AppDestination.Overlay) }
                     )
                 }
             }
@@ -92,29 +70,26 @@ fun SummaryScreen(onNavigate: (AppDestination) -> Unit) {
 }
 
 @Composable
-private fun ReasonStack(reasons: List<String>) {
-    Column(verticalArrangement = Arrangement.spacedBy(GuardSpace.Small)) {
-        reasons.forEachIndexed { index, reason ->
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(GuardRadius.Medium))
-                    .background(GuardColors.RoseSoft)
-                    .padding(GuardSpace.Medium),
-                horizontalArrangement = Arrangement.spacedBy(GuardSpace.Small)
-            ) {
-                Text(
-                    text = "0${index + 1}",
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.Black,
-                    color = GuardColors.Rose
-                )
-                Text(
-                    text = reason,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = GuardColors.Ink
-                )
-            }
-        }
+private fun EmptyResultPanel() {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(GuardRadius.Large))
+            .background(GuardColors.SurfaceMuted)
+            .padding(GuardSpace.Large),
+        verticalArrangement = Arrangement.spacedBy(GuardSpace.Medium)
+    ) {
+        BreathingWave()
+        Text(
+            text = "Waiting for real call data",
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Black,
+            color = GuardColors.Ink
+        )
+        Text(
+            text = "No caller number, transcript, prediction, or reason is shown until it is produced by the app runtime.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = GuardColors.InkMuted
+        )
     }
 }

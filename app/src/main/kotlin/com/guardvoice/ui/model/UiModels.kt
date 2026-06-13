@@ -5,8 +5,10 @@ import com.guardvoice.ui.theme.GuardColors
 
 enum class AppDestination(val label: String) {
     Setup("Setup"),
-    Home("Home"),
+    Dashboard("Dashboard"),
     Overlay("Call popup"),
+    Billing("Billing"),
+    Settings("Settings"),
     Summary("Result")
 }
 
@@ -21,6 +23,11 @@ enum class RiskLevel(
     val color: Color,
     val background: Color
 ) {
+    Pending(
+        label = "Pending",
+        color = GuardColors.InkMuted,
+        background = GuardColors.SurfaceMuted
+    ),
     Safe(
         label = "Safe",
         color = GuardColors.Forest,
@@ -38,6 +45,12 @@ enum class RiskLevel(
     )
 }
 
+enum class PlanTier(val label: String) {
+    Free("Free"),
+    Plus("Plus"),
+    Family("Family")
+}
+
 data class PermissionItem(
     val title: String,
     val description: String,
@@ -52,6 +65,14 @@ data class CallInsight(
     val reason: String
 )
 
+data class PredictionSummary(
+    val safeCount: Int,
+    val suspiciousCount: Int,
+    val scamCount: Int
+) {
+    val totalCount: Int = safeCount + suspiciousCount + scamCount
+}
+
 data class LiveAnalysis(
     val caller: String,
     val elapsed: String,
@@ -59,6 +80,26 @@ data class LiveAnalysis(
     val riskScore: Int,
     val transcript: String,
     val reasons: List<String>
+)
+
+data class BillingPlan(
+    val tier: PlanTier,
+    val price: String,
+    val description: String,
+    val features: List<String>,
+    val isCurrent: Boolean
+)
+
+data class BillingUsage(
+    val analyzedMinutes: Int,
+    val includedMinutes: Int,
+    val renewalLabel: String
+)
+
+data class SettingItem(
+    val title: String,
+    val description: String,
+    val isEnabled: Boolean
 )
 
 val setupPermissions = listOf(
@@ -89,39 +130,72 @@ val setupPermissions = listOf(
     )
 )
 
-val recentCalls = listOf(
-    CallInsight(
-        caller = "+1 (312) 847-1928",
-        time = "Today, 16:42",
-        riskLevel = RiskLevel.Scam,
-        riskScore = 83,
-        reason = "Gift-card payment and urgency language"
-    ),
-    CallInsight(
-        caller = "+994 50 214 78 61",
-        time = "Today, 12:08",
-        riskLevel = RiskLevel.Suspicious,
-        riskScore = 47,
-        reason = "Asked to verify bank details"
-    ),
-    CallInsight(
-        caller = "+44 20 7183 4862",
-        time = "Yesterday, 19:31",
-        riskLevel = RiskLevel.Safe,
-        riskScore = 12,
-        reason = "No coercion or payment request detected"
-    )
+val detectedCalls = emptyList<CallInsight>()
+
+val predictionSummary = PredictionSummary(
+    safeCount = 0,
+    suspiciousCount = 0,
+    scamCount = 0
 )
 
 val demoAnalysis = LiveAnalysis(
-    caller = "+994 50 214 78 61",
-    elapsed = "00:46",
-    riskLevel = RiskLevel.Suspicious,
-    riskScore = 47,
-    transcript = "Caller says your account is restricted and asks you to confirm a card number before the branch closes.",
-    reasons = listOf(
-        "Bank impersonation pattern",
-        "Personal info request",
-        "Time pressure"
+    caller = "Unsaved caller",
+    elapsed = "00:00",
+    riskLevel = RiskLevel.Pending,
+    riskScore = 0,
+    transcript = "Transcript and verdict will appear here after the audio pipeline starts.",
+    reasons = emptyList()
+)
+
+val billingPlans = listOf(
+    BillingPlan(
+        tier = PlanTier.Free,
+        price = "No billing",
+        description = "UI preview plan for local development.",
+        features = listOf("Per-call consent popup", "Local setup checklist", "Manual preview mode"),
+        isCurrent = true
+    ),
+    BillingPlan(
+        tier = PlanTier.Plus,
+        price = "Not set",
+        description = "Planned tier for real-time AI call analysis.",
+        features = listOf("Live scam scoring", "Call summaries", "Priority model routing"),
+        isCurrent = false
+    ),
+    BillingPlan(
+        tier = PlanTier.Family,
+        price = "Not set",
+        description = "Planned shared protection for multiple devices.",
+        features = listOf("Shared alerts", "Family dashboard", "Centralized billing"),
+        isCurrent = false
+    )
+)
+
+val billingUsage = BillingUsage(
+    analyzedMinutes = 0,
+    includedMinutes = 0,
+    renewalLabel = "Billing is not connected yet"
+)
+
+val defaultSettings = listOf(
+    SettingItem(
+        title = "Ask before every unsaved call",
+        description = "Keep analysis opt-in for each unknown number.",
+        isEnabled = true
+    ),
+    SettingItem(
+        title = "Auto speaker after consent",
+        description = "Route audio to speaker only after the user allows tracking.",
+        isEnabled = true
+    ),
+    SettingItem(
+        title = "Save transcripts locally",
+        description = "Keep call summaries on device when storage is added.",
+        isEnabled = false
+    ),
+    SettingItem(
+        title = "Share scam reports",
+        description = "Send confirmed scam patterns to a community database later.",
+        isEnabled = false
     )
 )

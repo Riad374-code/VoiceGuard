@@ -23,7 +23,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="10dp"
-        android:text="+994 50 214 78 61"
+        android:text="Unsaved caller"
         android:textColor="#1D1A16"
         android:textSize="22sp"
         android:textStyle="bold" />
