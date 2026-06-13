@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">GuardVoice</string>
+    <string name="overlay_allow">Allow tracking</string>
+    <string name="overlay_decline">Not now</string>
+    <string name="overlay_body">GuardVoice can listen only after you allow this call. Speaker mode may be used so both sides are audible.</string>
+    <string name="overlay_title">Unknown caller</string>
+</resources>
