@@ -28,8 +28,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.guardvoice.ui.components.BrandHeader
 import com.guardvoice.account.AccountProfile
+import com.guardvoice.ui.components.AccountMenu
+import com.guardvoice.ui.components.BrandHeader
 import com.guardvoice.ui.model.AppDestination
 import com.guardvoice.ui.model.PlanTier
 import com.guardvoice.ui.model.PermissionAction
@@ -69,7 +70,9 @@ fun GuardVoiceApp(
         ) {
             AppChrome(
                 currentDestination = destination,
-                onNavigate = navigate
+                profile = accountProfile,
+                onNavigate = navigate,
+                onLogout = { accountProfile = null }
             )
             when (destination) {
                 AppDestination.Setup -> SetupScreen(
@@ -104,10 +107,24 @@ fun GuardVoiceApp(
 @Composable
 private fun AppChrome(
     currentDestination: AppDestination,
-    onNavigate: (AppDestination) -> Unit
+    profile: AccountProfile?,
+    onNavigate: (AppDestination) -> Unit,
+    onLogout: () -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(GuardSpace.Medium)) {
-        BrandHeader()
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Top
+        ) {
+            BrandHeader(modifier = Modifier.weight(1f))
+            AccountMenu(
+                profile = profile,
+                onOpenAccount = { onNavigate(AppDestination.Account) },
+                onOpenPlans = { onNavigate(AppDestination.Billing) },
+                onLogout = onLogout
+            )
+        }
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -115,7 +132,9 @@ private fun AppChrome(
             horizontalArrangement = Arrangement.spacedBy(GuardSpace.Small),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            AppDestination.entries.forEach { destination ->
+            AppDestination.entries
+                .filter { destination -> destination != AppDestination.Account }
+                .forEach { destination ->
                 val isSelected = destination == currentDestination
                 Text(
                     modifier = Modifier
