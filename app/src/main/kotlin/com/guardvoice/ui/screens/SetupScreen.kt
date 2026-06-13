@@ -23,16 +23,20 @@ import com.guardvoice.ui.components.SecondaryAction
 import com.guardvoice.ui.components.SectionLabel
 import com.guardvoice.ui.components.SmallDivider
 import com.guardvoice.ui.model.AppDestination
+import com.guardvoice.ui.model.PermissionAction
 import com.guardvoice.ui.model.PermissionItem
 import com.guardvoice.ui.model.PermissionState
 import com.guardvoice.ui.model.RiskLevel
-import com.guardvoice.ui.model.setupPermissions
 import com.guardvoice.ui.theme.GuardColors
 import com.guardvoice.ui.theme.GuardRadius
 import com.guardvoice.ui.theme.GuardSpace
 
 @Composable
-fun SetupScreen(onNavigate: (AppDestination) -> Unit) {
+fun SetupScreen(
+    permissions: List<PermissionItem>,
+    onPermissionAction: (PermissionAction) -> Unit,
+    onNavigate: (AppDestination) -> Unit
+) {
     Column(verticalArrangement = Arrangement.spacedBy(GuardSpace.Large)) {
         AppSurface {
             Column(verticalArrangement = Arrangement.spacedBy(GuardSpace.Large)) {
@@ -67,9 +71,12 @@ fun SetupScreen(onNavigate: (AppDestination) -> Unit) {
         AppSurface {
             Column(verticalArrangement = Arrangement.spacedBy(GuardSpace.Medium)) {
                 SectionLabel(text = "Setup checklist")
-                setupPermissions.forEachIndexed { index, item ->
-                    PermissionRow(item = item)
-                    if (index != setupPermissions.lastIndex) {
+                permissions.forEachIndexed { index, item ->
+                    PermissionRow(
+                        item = item,
+                        onPermissionAction = onPermissionAction
+                    )
+                    if (index != permissions.lastIndex) {
                         SmallDivider()
                     }
                 }
@@ -79,36 +86,48 @@ fun SetupScreen(onNavigate: (AppDestination) -> Unit) {
 }
 
 @Composable
-private fun PermissionRow(item: PermissionItem) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(GuardSpace.Medium),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        PermissionDot(state = item.state)
-        Column(modifier = Modifier.weight(1f)) {
+private fun PermissionRow(
+    item: PermissionItem,
+    onPermissionAction: (PermissionAction) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(GuardSpace.Small)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(GuardSpace.Medium),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            PermissionDot(state = item.state)
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = item.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = GuardColors.Ink
+                )
+                Text(
+                    text = item.description,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = GuardColors.InkMuted
+                )
+            }
             Text(
-                text = item.title,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = GuardColors.Ink
-            )
-            Text(
-                text = item.description,
-                style = MaterialTheme.typography.bodyMedium,
-                color = GuardColors.InkMuted
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .background(statusBackground(item.state))
+                    .padding(horizontal = 10.dp, vertical = 7.dp),
+                text = statusLabel(item.state),
+                style = MaterialTheme.typography.labelSmall,
+                color = statusColor(item.state),
+                fontWeight = FontWeight.Black
             )
         }
-        Text(
-            modifier = Modifier
-                .clip(CircleShape)
-                .background(statusBackground(item.state))
-                .padding(horizontal = 10.dp, vertical = 7.dp),
-            text = statusLabel(item.state),
-            style = MaterialTheme.typography.labelSmall,
-            color = statusColor(item.state),
-            fontWeight = FontWeight.Black
-        )
+        if (item.action != null && item.actionLabel != null) {
+            SecondaryAction(
+                text = item.actionLabel,
+                onClick = { onPermissionAction(item.action) },
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
     }
 }
 

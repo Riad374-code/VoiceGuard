@@ -29,6 +29,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.guardvoice.ui.components.BrandHeader
 import com.guardvoice.ui.model.AppDestination
+import com.guardvoice.ui.model.PermissionAction
+import com.guardvoice.ui.model.PermissionItem
 import com.guardvoice.ui.screens.BillingScreen
 import com.guardvoice.ui.screens.DashboardScreen
 import com.guardvoice.ui.screens.OverlayScreen
@@ -39,7 +41,10 @@ import com.guardvoice.ui.theme.GuardColors
 import com.guardvoice.ui.theme.GuardSpace
 
 @Composable
-fun GuardVoiceApp() {
+fun GuardVoiceApp(
+    permissions: List<PermissionItem>,
+    onPermissionAction: (PermissionAction) -> Unit
+) {
     var destinationName by rememberSaveable { mutableStateOf(AppDestination.Setup.name) }
     val destination = AppDestination.valueOf(destinationName)
     val navigate: (AppDestination) -> Unit = { destinationName = it.name }
@@ -62,7 +67,11 @@ fun GuardVoiceApp() {
                 onNavigate = navigate
             )
             when (destination) {
-                AppDestination.Setup -> SetupScreen(onNavigate = navigate)
+                AppDestination.Setup -> SetupScreen(
+                    permissions = permissions,
+                    onPermissionAction = onPermissionAction,
+                    onNavigate = navigate
+                )
                 AppDestination.Dashboard -> DashboardScreen(onNavigate = navigate)
                 AppDestination.Overlay -> OverlayScreen(onNavigate = navigate)
                 AppDestination.Billing -> BillingScreen()

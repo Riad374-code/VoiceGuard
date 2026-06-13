@@ -18,6 +18,12 @@ enum class PermissionState {
     Waiting
 }
 
+enum class PermissionAction {
+    RequestRuntimePermissions,
+    OpenOverlaySettings,
+    OpenCallerIdSettings
+}
+
 enum class RiskLevel(
     val label: String,
     val color: Color,
@@ -54,7 +60,9 @@ enum class PlanTier(val label: String) {
 data class PermissionItem(
     val title: String,
     val description: String,
-    val state: PermissionState
+    val state: PermissionState,
+    val action: PermissionAction? = null,
+    val actionLabel: String? = null
 )
 
 data class CallInsight(
@@ -100,34 +108,6 @@ data class SettingItem(
     val title: String,
     val description: String,
     val isEnabled: Boolean
-)
-
-val setupPermissions = listOf(
-    PermissionItem(
-        title = "Microphone",
-        description = "Used only after per-call consent.",
-        state = PermissionState.Ready
-    ),
-    PermissionItem(
-        title = "Contacts",
-        description = "Skips saved callers automatically.",
-        state = PermissionState.Ready
-    ),
-    PermissionItem(
-        title = "Phone state",
-        description = "Detects incoming calls from unknown numbers.",
-        state = PermissionState.NeedsAction
-    ),
-    PermissionItem(
-        title = "Display over apps",
-        description = "Shows the call popup above the dialer.",
-        state = PermissionState.Waiting
-    ),
-    PermissionItem(
-        title = "Caller ID role",
-        description = "Lets Android route unknown-call events here.",
-        state = PermissionState.NeedsAction
-    )
 )
 
 val detectedCalls = emptyList<CallInsight>()
