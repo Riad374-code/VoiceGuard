@@ -14,7 +14,6 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import com.guardvoice.ui.GuardVoiceApp
@@ -32,11 +31,13 @@ private val RUNTIME_PERMISSIONS = arrayOf(
 )
 
 class MainActivity : ComponentActivity() {
+    private var permissionItems by mutableStateOf<List<PermissionItem>>(emptyList())
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        permissionItems = buildPermissionItems()
         setContent {
-            var permissionItems by remember { mutableStateOf(buildPermissionItems()) }
             val runtimePermissionLauncher = rememberLauncherForActivityResult(
                 ActivityResultContracts.RequestMultiplePermissions()
             ) {
@@ -69,11 +70,17 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        permissionItems = buildPermissionItems()
+    }
+
     private fun buildPermissionItems(): List<PermissionItem> {
         val hasRuntimePermissions = RUNTIME_PERMISSIONS.all { permission ->
             hasPermission(permission)
         }
         val hasOverlayPermission = Settings.canDrawOverlays(this)
+        val hasCallerIdRole = hasCallScreeningRole()
         val runtimeAction = if (hasRuntimePermissions) null else PermissionAction.RequestRuntimePermissions
         val runtimeActionLabel = if (hasRuntimePermissions) null else "Grant app permissions"
 
@@ -108,8 +115,10 @@ class MainActivity : ComponentActivity() {
             ),
             PermissionItem(
                 title = "Caller ID role",
-                description = "Enabled after the call screening service is added.",
-                state = PermissionState.Waiting
+                description = "Lets GuardVoice detect incoming unknown callers.",
+                state = permissionState(hasCallerIdRole),
+                action = if (hasCallerIdRole) null else PermissionAction.OpenCallerIdSettings,
+                actionLabel = if (hasCallerIdRole) null else "Set as Caller ID app"
             )
         )
     }
@@ -136,6 +145,12 @@ class MainActivity : ComponentActivity() {
         hasPermission(Manifest.permission.READ_PHONE_STATE) &&
             hasPermission(Manifest.permission.READ_CALL_LOG) &&
             hasPermission(Manifest.permission.ANSWER_PHONE_CALLS)
+
+    private fun hasCallScreeningRole(): Boolean {
+        val roleManager = getSystemService(RoleManager::class.java)
+        return roleManager.isRoleAvailable(RoleManager.ROLE_CALL_SCREENING) &&
+            roleManager.isRoleHeld(RoleManager.ROLE_CALL_SCREENING)
+    }
 
     private fun overlaySettingsIntent(): Intent =
         Intent(

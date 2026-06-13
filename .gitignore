@@ -1,6 +1,26 @@
-.gradle/
+# Android Studio and IntelliJ
 .idea/
-build/
-local.properties
 *.iml
-app/build/
+out/
+
+# Gradle and Kotlin
+.gradle/
+.kotlin/
+build/
+**/build/
+
+# Local Android configuration
+local.properties
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Build artifacts
+*.apk
+*.aab
+
+# Signing and local secrets
+*.jks
+*.keystore
+keystore.properties
+secrets.properties

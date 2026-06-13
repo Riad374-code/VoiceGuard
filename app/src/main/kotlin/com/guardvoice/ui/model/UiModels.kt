@@ -8,6 +8,7 @@ enum class AppDestination(val label: String) {
     Dashboard("Dashboard"),
     Overlay("Call popup"),
     Billing("Billing"),
+    Account("Account"),
     Settings("Settings"),
     Summary("Result")
 }

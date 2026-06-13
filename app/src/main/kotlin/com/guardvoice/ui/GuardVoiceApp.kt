@@ -20,6 +20,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -28,10 +29,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.guardvoice.ui.components.BrandHeader
+import com.guardvoice.account.AccountProfile
 import com.guardvoice.ui.model.AppDestination
+import com.guardvoice.ui.model.PlanTier
 import com.guardvoice.ui.model.PermissionAction
 import com.guardvoice.ui.model.PermissionItem
 import com.guardvoice.ui.screens.BillingScreen
+import com.guardvoice.ui.screens.AccountScreen
 import com.guardvoice.ui.screens.DashboardScreen
 import com.guardvoice.ui.screens.OverlayScreen
 import com.guardvoice.ui.screens.SetupScreen
@@ -46,6 +50,7 @@ fun GuardVoiceApp(
     onPermissionAction: (PermissionAction) -> Unit
 ) {
     var destinationName by rememberSaveable { mutableStateOf(AppDestination.Setup.name) }
+    var accountProfile by remember { mutableStateOf<AccountProfile?>(null) }
     val destination = AppDestination.valueOf(destinationName)
     val navigate: (AppDestination) -> Unit = { destinationName = it.name }
 
@@ -75,6 +80,20 @@ fun GuardVoiceApp(
                 AppDestination.Dashboard -> DashboardScreen(onNavigate = navigate)
                 AppDestination.Overlay -> OverlayScreen(onNavigate = navigate)
                 AppDestination.Billing -> BillingScreen()
+                AppDestination.Account -> AccountScreen(
+                    profile = accountProfile,
+                    onAuthenticate = { fullName, email ->
+                        accountProfile = AccountProfile(
+                            fullName = fullName,
+                            email = email,
+                            phoneNumber = "",
+                            planTier = PlanTier.Free
+                        )
+                    },
+                    onProfileUpdate = { profile -> accountProfile = profile },
+                    onLogout = { accountProfile = null },
+                    onOpenPlans = { navigate(AppDestination.Billing) }
+                )
                 AppDestination.Settings -> SettingsScreen()
                 AppDestination.Summary -> SummaryScreen(onNavigate = navigate)
             }
