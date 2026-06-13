@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -20,9 +21,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.zIndex
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import com.guardvoice.account.AccountProfile
 import com.guardvoice.ui.clickableWithoutRipple
 import com.guardvoice.ui.model.PlanTier
@@ -31,6 +35,8 @@ import com.guardvoice.ui.theme.GuardRadius
 import com.guardvoice.ui.theme.GuardSpace
 
 private val ACCOUNT_MENU_WIDTH = 270.dp
+private val ACCOUNT_MENU_VERTICAL_OFFSET = 50.dp
+private val ACCOUNT_MENU_ELEVATION = 12.dp
 
 @Composable
 fun AccountMenu(
@@ -43,7 +49,7 @@ fun AccountMenu(
     var isExpanded by rememberSaveable { mutableStateOf(false) }
 
     Box(
-        modifier = modifier.zIndex(2f),
+        modifier = modifier,
         contentAlignment = Alignment.TopEnd
     ) {
         AccountMenuButton(
@@ -51,22 +57,55 @@ fun AccountMenu(
             onClick = { isExpanded = !isExpanded }
         )
         if (isExpanded) {
-            AccountMenuPanel(
+            AccountMenuPopup(
                 profile = profile,
-                onOpenAccount = {
-                    isExpanded = false
-                    onOpenAccount()
-                },
-                onOpenPlans = {
-                    isExpanded = false
-                    onOpenPlans()
-                },
-                onLogout = {
-                    isExpanded = false
-                    onLogout()
-                }
+                onDismiss = { isExpanded = false },
+                onOpenAccount = onOpenAccount,
+                onOpenPlans = onOpenPlans,
+                onLogout = onLogout
             )
         }
+    }
+}
+
+@Composable
+private fun AccountMenuPopup(
+    profile: AccountProfile?,
+    onDismiss: () -> Unit,
+    onOpenAccount: () -> Unit,
+    onOpenPlans: () -> Unit,
+    onLogout: () -> Unit
+) {
+    val verticalOffset = with(LocalDensity.current) {
+        ACCOUNT_MENU_VERTICAL_OFFSET.roundToPx()
+    }
+
+    Popup(
+        alignment = Alignment.TopEnd,
+        offset = IntOffset(x = 0, y = verticalOffset),
+        onDismissRequest = onDismiss,
+        properties = PopupProperties(
+            focusable = true,
+            dismissOnBackPress = true,
+            dismissOnClickOutside = true,
+            clippingEnabled = true
+        )
+    ) {
+        AccountMenuPanel(
+            profile = profile,
+            onOpenAccount = {
+                onDismiss()
+                onOpenAccount()
+            },
+            onOpenPlans = {
+                onDismiss()
+                onOpenPlans()
+            },
+            onLogout = {
+                onDismiss()
+                onLogout()
+            }
+        )
     }
 }
 
@@ -99,34 +138,37 @@ private fun AccountMenuPanel(
     onOpenPlans: () -> Unit,
     onLogout: () -> Unit
 ) {
-    Column(
+    Surface(
         modifier = Modifier
-            .padding(top = 50.dp)
             .width(ACCOUNT_MENU_WIDTH)
-            .clip(RoundedCornerShape(GuardRadius.Large))
-            .background(GuardColors.Surface)
-            .border(1.dp, GuardColors.Line, RoundedCornerShape(GuardRadius.Large))
-            .padding(GuardSpace.Medium),
-        verticalArrangement = Arrangement.spacedBy(GuardSpace.Medium)
+            .border(1.dp, GuardColors.Line, RoundedCornerShape(GuardRadius.Large)),
+        shape = RoundedCornerShape(GuardRadius.Large),
+        color = GuardColors.Surface,
+        shadowElevation = ACCOUNT_MENU_ELEVATION
     ) {
-        AccountMenuHeader(profile = profile)
-        SmallDivider()
-        SecondaryAction(
-            modifier = Modifier.fillMaxWidth(),
-            text = if (profile == null) "Login or register" else "Profile and data",
-            onClick = onOpenAccount
-        )
-        SecondaryAction(
-            modifier = Modifier.fillMaxWidth(),
-            text = "Subscription plans",
-            onClick = onOpenPlans
-        )
-        if (profile != null) {
+        Column(
+            modifier = Modifier.padding(GuardSpace.Medium),
+            verticalArrangement = Arrangement.spacedBy(GuardSpace.Medium)
+        ) {
+            AccountMenuHeader(profile = profile)
+            SmallDivider()
             SecondaryAction(
                 modifier = Modifier.fillMaxWidth(),
-                text = "Log out",
-                onClick = onLogout
+                text = if (profile == null) "Login or register" else "Profile and data",
+                onClick = onOpenAccount
             )
+            SecondaryAction(
+                modifier = Modifier.fillMaxWidth(),
+                text = "Subscription plans",
+                onClick = onOpenPlans
+            )
+            if (profile != null) {
+                SecondaryAction(
+                    modifier = Modifier.fillMaxWidth(),
+                    text = "Log out",
+                    onClick = onLogout
+                )
+            }
         }
     }
 }
