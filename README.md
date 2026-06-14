@@ -1,0 +1,141 @@
+<p align="center">
+  <img src="./Our%20logo.png" alt="GuardVoice logo" width="220">
+</p>
+
+<h1 align="center">GuardVoice</h1>
+
+<p align="center">
+  A consent-first Android app for detecting unknown callers and building toward real-time AI scam call protection.
+</p>
+
+## Demo
+
+### [Watch the GuardVoice video demonstration](./Video.mp4)
+
+The video is stored in this repository as [`Video.mp4`](./Video.mp4). If it does not play inside your Git client, open the link in a browser or download the file.
+
+## Overview
+
+GuardVoice is an Android prototype that stays idle for saved contacts and reacts to incoming calls from unknown numbers. The app guides users through the permissions required for call screening, displays a consent-focused call popup, and provides dashboard, summary, settings, account, and billing interfaces.
+
+The long-term product goal is to transcribe approved calls, analyze conversations for scam indicators, and present a live risk verdict without monitoring saved contacts or recording before the user gives consent.
+
+## Current Features
+
+- Detects incoming calls from unsaved numbers through `CallScreeningService`
+- Always allows calls through while reporting eligible unknown callers to the app
+- Checks contacts locally to avoid acting on saved callers
+- Requests runtime phone, contacts, and microphone permissions
+- Guides users to grant overlay access and the Android Caller ID role
+- Includes setup, dashboard, call popup, call summary, settings, account, and billing screens
+- Provides Safe, Risky, and Scam presentation states
+- Includes unit tests for call-screening decisions and account validation
+
+> [!NOTE]
+> GuardVoice is currently a prototype. Live audio transcription, AI scam analysis, persistent call history, and production billing/authentication are not implemented yet.
+
+## Technology
+
+- Kotlin 2.2
+- Jetpack Compose and Material 3
+- Android `CallScreeningService`
+- Android SDK 36
+- Minimum Android version: Android 10 (API 29)
+- Java 17
+- Gradle Kotlin DSL
+
+## Getting Started
+
+### Prerequisites
+
+- Android Studio with Android SDK 36 installed
+- JDK 17
+- An Android 10+ device or emulator
+
+### Build and Run
+
+1. Clone the repository:
+
+   ```bash
+   git clone https://github.com/Riad374-code/VoiceGuard.git
+   cd VoiceGuard
+   ```
+
+2. Open the project in Android Studio and allow Gradle to synchronize.
+
+3. Run the `app` configuration on an Android 10+ device or emulator.
+
+You can also build from the command line:
+
+```powershell
+.\gradlew.bat assembleDebug
+```
+
+On macOS or Linux:
+
+```bash
+./gradlew assembleDebug
+```
+
+The debug APK is generated under `app/build/outputs/apk/debug/`.
+
+## Device Setup
+
+On first launch, complete the setup checklist:
+
+1. Grant microphone, contacts, phone state, call log, and phone-call permissions.
+2. Allow GuardVoice to display over other apps.
+3. Set GuardVoice as the device's Caller ID and spam app when Android prompts you.
+
+Call-screening behavior can vary by device manufacturer. Testing on a physical Android phone is recommended.
+
+## Tests
+
+Run the local unit tests with:
+
+```powershell
+.\gradlew.bat test
+```
+
+Or on macOS and Linux:
+
+```bash
+./gradlew test
+```
+
+## Project Structure
+
+```text
+app/src/main/
+|-- AndroidManifest.xml
+|-- kotlin/com/guardvoice/
+|   |-- account/     # Account models and validation
+|   |-- call/        # Incoming call screening
+|   |-- data/        # Contact lookup
+|   `-- ui/          # Compose app, screens, components, and theme
+`-- res/
+    |-- drawable/    # Popup and launch assets
+    |-- layout/      # Call overlay layout
+    `-- values/      # Strings and styles
+```
+
+## Planned Work
+
+- Connect unknown-call broadcasts to the consent popup
+- Capture audio only after explicit per-call consent
+- Add speech-to-text processing
+- Analyze transcripts for scam patterns
+- Update live risk predictions during calls
+- Store call summaries and prediction history locally
+- Replace prototype account and billing state with production services
+
+## Privacy Direction
+
+GuardVoice is designed around explicit consent:
+
+- Saved contacts are ignored by the screening decision.
+- Unknown calls are allowed rather than silently blocked.
+- Audio access is intended to start only after the user approves tracking for that call.
+- Future transcript and call-history storage should remain transparent and user-controlled.
+
+For the detailed product and technical blueprint, see [`voice-guard-full-tech.md`](./voice-guard-full-tech.md).
