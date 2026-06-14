@@ -6,6 +6,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -31,14 +32,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.guardvoice.R
 import com.guardvoice.ui.model.RiskLevel
 import com.guardvoice.ui.theme.GuardColors
 import com.guardvoice.ui.theme.GuardRadius
@@ -60,7 +64,7 @@ fun BrandHeader(modifier: Modifier = Modifier) {
             Text(
                 text = "GuardVoice",
                 style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Black,
+                fontWeight = FontWeight.SemiBold,
                 color = GuardColors.Ink
             )
             Text(
@@ -74,40 +78,19 @@ fun BrandHeader(modifier: Modifier = Modifier) {
 
 @Composable
 fun ShieldMark(modifier: Modifier = Modifier) {
-    Canvas(
+    Image(
+        painter = painterResource(R.drawable.guardvoice_logo),
+        contentDescription = "GuardVoice",
+        contentScale = ContentScale.Crop,
         modifier = modifier
             .size(GuardSize.BrandMark)
+            .shadow(
+                elevation = 10.dp,
+                shape = RoundedCornerShape(GuardRadius.Medium),
+                ambientColor = GuardColors.Navy.copy(alpha = 0.18f)
+            )
             .clip(RoundedCornerShape(GuardRadius.Medium))
-            .background(GuardColors.Forest)
-            .padding(GuardSpace.Small)
-    ) {
-        val shield = Path().apply {
-            moveTo(size.width * 0.5f, size.height * 0.16f)
-            lineTo(size.width * 0.78f, size.height * 0.28f)
-            lineTo(size.width * 0.72f, size.height * 0.64f)
-            quadraticBezierTo(
-                size.width * 0.64f,
-                size.height * 0.82f,
-                size.width * 0.5f,
-                size.height * 0.9f
-            )
-            quadraticBezierTo(
-                size.width * 0.36f,
-                size.height * 0.82f,
-                size.width * 0.28f,
-                size.height * 0.64f
-            )
-            lineTo(size.width * 0.22f, size.height * 0.28f)
-            close()
-        }
-        drawPath(shield, color = GuardColors.Surface)
-        drawLine(
-            color = GuardColors.Forest,
-            start = Offset(size.width * 0.5f, size.height * 0.3f),
-            end = Offset(size.width * 0.5f, size.height * 0.68f),
-            strokeWidth = 5f
-        )
-    }
+    )
 }
 
 @Composable
@@ -158,6 +141,12 @@ fun AppSurface(
 ) {
     Box(
         modifier = modifier
+            .shadow(
+                elevation = 16.dp,
+                shape = RoundedCornerShape(GuardRadius.Large),
+                ambientColor = GuardColors.Navy.copy(alpha = 0.06f),
+                spotColor = GuardColors.Navy.copy(alpha = 0.08f)
+            )
             .clip(RoundedCornerShape(GuardRadius.Large))
             .background(GuardColors.Surface)
             .border(1.dp, GuardColors.Line, RoundedCornerShape(GuardRadius.Large))
@@ -178,7 +167,7 @@ fun PrimaryAction(
         onClick = onClick,
         shape = RoundedCornerShape(GuardRadius.Medium),
         colors = ButtonDefaults.buttonColors(
-            containerColor = GuardColors.Forest,
+            containerColor = GuardColors.Navy,
             contentColor = GuardColors.Surface
         )
     ) {

@@ -140,7 +140,7 @@ private fun AppChrome(
                     modifier = Modifier
                         .clip(CircleShape)
                         .background(
-                            if (isSelected) GuardColors.Ink else GuardColors.SurfaceMuted
+                            if (isSelected) GuardColors.Navy else GuardColors.SurfaceMuted
                         )
                         .padding(horizontal = 12.dp, vertical = 9.dp)
                         .then(
@@ -151,7 +151,7 @@ private fun AppChrome(
                     text = destination.label,
                     style = MaterialTheme.typography.labelMedium,
                     color = if (isSelected) GuardColors.Surface else GuardColors.InkMuted,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.SemiBold
                 )
             }
         }
