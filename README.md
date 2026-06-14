@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./Our%20logo.png" alt="GuardVoice logo" width="220">
+  <img src="./app/src/main/res/drawable-nodpi/guardvoice_logo.png" alt="GuardVoice logo" width="220">
 </p>
 
 <h1 align="center">GuardVoice</h1>
@@ -10,9 +10,9 @@
 
 ## Demo
 
-<video src="./Video.mp4" controls width="100%">
-  Your browser does not support embedded video. You can open the demo video from this repository as Video.mp4.
-</video>
+<p align="center">
+  <img src="./Demo.gif" alt="GuardVoice app demo" width="320">
+</p>
 
 ## Overview
 
