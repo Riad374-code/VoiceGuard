@@ -34,6 +34,7 @@ class MainActivity : ComponentActivity() {
     private var permissionItems by mutableStateOf<List<PermissionItem>>(emptyList())
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        setTheme(R.style.Theme_GuardVoice)
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         permissionItems = buildPermissionItems()
