@@ -22,5 +22,11 @@ captures/
 # Signing and local secrets
 *.jks
 *.keystore
+*.key
+*.pem
+*.p12
+.env
+.env.*
+google-services.json
 keystore.properties
 secrets.properties
