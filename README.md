@@ -10,9 +10,9 @@
 
 ## Demo
 
-### [Watch the GuardVoice video demonstration](./Video.mp4)
-
-The video is stored in this repository as [`Video.mp4`](./Video.mp4). If it does not play inside your Git client, open the link in a browser or download the file.
+<video src="./Video.mp4" controls width="100%">
+  Your browser does not support embedded video. You can open the demo video from this repository as Video.mp4.
+</video>
 
 ## Overview
 
