@@ -16,9 +16,9 @@
 
 ## Overview
 
-GuardVoice is an Android prototype that reacts to incoming phone calls, asks for per-call consent, and can start speakerphone plus microphone capture for a future AI scam detector. The app guides users through the permissions required for call screening, displays a consent-focused call popup, and provides dashboard, summary, settings, account, and billing interfaces.
+GuardVoice is an Android prototype that reacts to incoming phone calls, asks for per-call consent, starts speakerphone plus microphone capture, and can stream approved call audio to Groq Whisper transcription for local scam-pattern analysis. The app guides users through the permissions required for call screening, displays a consent-focused call popup, and provides dashboard, summary, settings, account, and billing interfaces.
 
-The long-term product goal is to transcribe approved calls, analyze conversations for scam indicators, and present a live risk verdict without recording before the user gives consent.
+The long-term product goal is to route this through a production backend so API keys stay server-side and verdict history can sync across devices. The current client keeps call sessions local and never starts audio capture before the user gives per-call consent.
 
 ## Current Features
 
@@ -26,21 +26,25 @@ The long-term product goal is to transcribe approved calls, analyze conversation
 - Always allows calls through while showing a consent popup
 - Starts speakerphone and microphone capture only after the user allows tracking
 - Uses a transparent capture handoff activity so Android 14+ can start microphone capture from a visible app state
-- Saves local call-session history with popup choice, capture status, streamed audio duration, and future verdict fields
+- Streams approved microphone audio in short WAV chunks to Groq Whisper when `GROQ_API_KEY` is configured
+- Runs local scam-pattern analysis on returned transcripts and updates the live call popup
+- Saves local SQLite call-session history with popup choice, capture status, streamed audio duration, transcripts, reasons, and verdicts
 - Requests runtime phone-state, contacts, notification, and microphone permissions
 - Guides users to grant overlay access and the Android Caller ID role
 - Includes setup, dashboard, call popup, call summary, settings, account, and billing screens
-- Provides Safe, Risky, and Scam presentation states
-- Includes unit tests for call-screening decisions and account validation
+- Provides Safe, Risky, and Scam presentation states in the popup and app history
+- Includes unit tests for call-screening decisions, account validation, call audio stats, and scam analysis
 
 > [!NOTE]
-> GuardVoice is currently a prototype. Local call-session history is implemented, but live audio transcription, AI scam analysis, backend sync, and production billing/authentication are not implemented yet.
+> GuardVoice is currently a prototype. Live Groq transcription and local scam analysis are wired for development, but production backend sync, production billing, and production authentication are not implemented yet.
 
 ## Technology
 
 - Kotlin 2.2
 - Jetpack Compose and Material 3
 - Android `CallScreeningService`
+- Android SQLite
+- Groq speech-to-text API compatible with `whisper-large-v3` and `whisper-large-v3-turbo`
 - Android SDK 36
 - Minimum Android version: Android 10 (API 29)
 - Java 17
@@ -80,6 +84,17 @@ On macOS or Linux:
 ```
 
 The debug APK is generated under `app/build/outputs/apk/debug/`.
+
+### Optional Groq Configuration
+
+Live transcription is disabled unless a Groq key is supplied from an ignored local source. Add this to `.env` for local debug builds, or set the same values as environment variables before building. Gradle also accepts `local.properties` as a fallback.
+
+```properties
+GROQ_API_KEY=your_new_groq_key
+GROQ_WHISPER_MODEL=whisper-large-v3-turbo
+```
+
+Do not commit API keys. For a production app, route transcription through a backend so the Groq key is never shipped inside the Android APK.
 
 ## Device Setup
 
@@ -123,11 +138,8 @@ app/src/main/
 
 ## Planned Work
 
-- Stream microphone chunks into the AI analysis pipeline
-- Add speech-to-text processing
-- Analyze transcripts for scam patterns
-- Update live risk predictions during calls
 - Sync call summaries and prediction history with a production backend
+- Move Groq calls behind a backend-held secret
 - Replace prototype account and billing state with production services
 
 ## Privacy Direction
@@ -137,6 +149,6 @@ GuardVoice is designed around explicit consent:
 - Incoming calls are allowed normally unless the user explicitly starts tracking.
 - Every incoming call is allowed rather than silently blocked.
 - Audio access is intended to start only after the user approves tracking for that call.
-- Future transcript and call-history storage should remain transparent and user-controlled.
+- Transcript and call-history storage should remain transparent and user-controlled.
 
 For the detailed product and technical blueprint, see [`voice-guard-full-tech.md`](./voice-guard-full-tech.md).

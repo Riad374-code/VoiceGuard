@@ -55,7 +55,11 @@ private fun reasonForSession(session: CallSession): String =
         CallSessionStatus.Detected -> "Incoming call detected; waiting for consent."
         CallSessionStatus.Listening -> "Listening now. ${audioDurationLabel(session.audioBytesStreamed)} streamed."
         CallSessionStatus.Completed -> {
-            "${audioDurationLabel(session.audioBytesStreamed)} streamed. AI verdict pending."
+            if (session.verdict == CallVerdict.Pending) {
+                "${audioDurationLabel(session.audioBytesStreamed)} streamed. Waiting for transcript analysis."
+            } else {
+                "${audioDurationLabel(session.audioBytesStreamed)} streamed. ${session.summary}"
+            }
         }
         CallSessionStatus.Declined -> "Tracking was skipped for this call."
         CallSessionStatus.Failed -> session.summary.ifBlank { "Call tracking failed." }

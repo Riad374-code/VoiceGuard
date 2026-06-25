@@ -107,6 +107,7 @@ class AudioCaptureService : Service() {
                 }
                 activeRecorder = recorder
                 isCaptureRunning = true
+                CallAudioStream.init(this, activeSessionId)
                 captureThread = Thread({ captureLoop(recorder) }, "GuardVoiceAudioCapture").apply {
                     start()
                 }
@@ -152,6 +153,7 @@ class AudioCaptureService : Service() {
         }
         flushAudioProgress()
         recorderToRelease?.releaseSafely()
+        CallAudioStream.reset()
         restoreAudioMode()
         CallSessionRepository.markCompleted(this, activeSessionId)
         publishState(CaptureState.Stopped)
@@ -377,6 +379,12 @@ class AudioCaptureService : Service() {
         const val ACTION_CAPTURE_STATE_CHANGED =
             "com.guardvoice.action.CAPTURE_STATE_CHANGED"
         const val EXTRA_CAPTURE_STATE = "extra_capture_state"
+        const val ACTION_VERDICT_CHANGED =
+            "com.guardvoice.action.VERDICT_CHANGED"
+        const val EXTRA_RISK_LEVEL = "extra_risk_level"
+        const val EXTRA_RISK_SCORE = "extra_risk_score"
+        const val EXTRA_TRANSCRIPT = "extra_transcript"
+        const val EXTRA_REASONS = "extra_reasons"
         private const val ACTION_START = "com.guardvoice.action.START_CAPTURE"
         private const val ACTION_STOP = "com.guardvoice.action.STOP_CAPTURE"
         private const val EXTRA_PHONE_NUMBER = "extra_phone_number"

@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
+import com.guardvoice.db.GuardVoiceRepository
 import java.util.UUID
 
 object CallSessionRepository {
@@ -41,7 +42,19 @@ object CallSessionRepository {
             reasons = emptyList()
         )
         replaceSessions(context) { sessions ->
-            listOf(session) + sessions.take(MAX_STORED_SESSIONS - 1)
+            // Keep only the last MAX_STORED_SESSIONS - 1 existing sessions
+            val trimmed = if (sessions.size >= MAX_STORED_SESSIONS - 1) {
+                sessions.take(MAX_STORED_SESSIONS - 1)
+            } else sessions
+            // Insert new session at the head (newest first)
+            listOf(session) + trimmed
+        }
+        // Also persist to SQLite database
+        try {
+            val repo = GuardVoiceRepository.getInstance(context)
+            repo.insertRecording(session)
+        } catch (e: Exception) {
+            android.util.Log.e("CallSessionRepository", "Failed to persist recording to SQLite", e)
         }
         return session.id
     }
@@ -76,10 +89,17 @@ object CallSessionRepository {
 
     fun markCompleted(context: Context, sessionId: String) {
         updateSession(context, sessionId) { session, nowMillis ->
+            val hasAnalysis = session.verdict != CallVerdict.Pending ||
+                session.transcriptPreview.isNotBlank() ||
+                session.reasons.isNotEmpty()
             session.copy(
                 updatedAtMillis = nowMillis,
                 status = CallSessionStatus.Completed,
-                summary = "Audio stream ended. AI analysis is not connected yet."
+                summary = if (hasAnalysis) {
+                    session.summary.ifBlank { "Audio stream ended with saved analysis." }
+                } else {
+                    "Audio stream ended. Waiting for transcript analysis."
+                }
             )
         }
     }
@@ -138,10 +158,21 @@ object CallSessionRepository {
         if (sessionId.isBlank()) {
             return
         }
+        var updatedSessionForSync: CallSession? = null
         replaceSessions(context) { sessions ->
             val nowMillis = System.currentTimeMillis()
             sessions.map { session ->
-                if (session.id == sessionId) transform(session, nowMillis) else session
+                if (session.id == sessionId) {
+                    transform(session, nowMillis).also { updatedSessionForSync = it }
+                } else session
+            }
+        }
+        val toSync = updatedSessionForSync
+        if (toSync != null) {
+            try {
+                GuardVoiceRepository.getInstance(context).insertRecording(toSync)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to sync session update to SQLite", e)
             }
         }
     }
@@ -165,6 +196,23 @@ object CallSessionRepository {
             if (isLoaded) {
                 return
             }
+            // Try loading from SQLite first (durable store)
+            try {
+                val repo = GuardVoiceRepository.getInstance(context)
+                val dbSessions = repo.getRecordings()
+                if (dbSessions.isNotEmpty()) {
+                    sessionState.value = dbSessions
+                    // Sync back to SharedPreferences
+                    preferences(context).edit()
+                        .putString(PREF_SESSIONS, encodeSessions(dbSessions))
+                        .apply()
+                    isLoaded = true
+                    return
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "DB load failed, falling back to SharedPreferences", e)
+            }
+            // Fall back to SharedPreferences
             sessionState.value = decodeSessions(
                 preferences(context).getString(PREF_SESSIONS, null)
             )

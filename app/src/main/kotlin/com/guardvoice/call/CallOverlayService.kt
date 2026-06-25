@@ -26,6 +26,7 @@ import androidx.core.content.ContextCompat
 import com.guardvoice.MainActivity
 import com.guardvoice.R
 import com.guardvoice.data.CallSessionRepository
+import com.guardvoice.db.GuardVoiceRepository
 
 class CallOverlayService : Service() {
     private val windowManager by lazy { getSystemService(WindowManager::class.java) }
@@ -42,15 +43,27 @@ class CallOverlayService : Service() {
             updateCaptureState(state)
         }
     }
+    private val verdictReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            val riskLevel = intent.getStringExtra(AudioCaptureService.EXTRA_RISK_LEVEL)
+            val riskScore = intent.getIntExtra(AudioCaptureService.EXTRA_RISK_SCORE, 0)
+            val transcript = intent.getStringExtra(AudioCaptureService.EXTRA_TRANSCRIPT).orEmpty()
+            val reasons = intent.getStringArrayExtra(AudioCaptureService.EXTRA_REASONS)
+                ?.toList().orEmpty()
+            updateVerdictDisplay(riskLevel, riskScore, transcript, reasons)
+        }
+    }
     private var overlayView: View? = null
     private var isCaptureRequested = false
     private var isCaptureStateReceiverRegistered = false
+    private var isVerdictReceiverRegistered = false
     private var activeSessionId = ""
 
     override fun onCreate() {
         super.onCreate()
         ensureNotificationChannel()
         registerCaptureStateReceiver()
+        registerVerdictReceiver()
         callStateMonitor.start()
     }
 
@@ -78,6 +91,7 @@ class CallOverlayService : Service() {
         }
         removeOverlay()
         unregisterCaptureStateReceiver()
+        unregisterVerdictReceiver()
         callStateMonitor.stop()
         stopForeground(STOP_FOREGROUND_REMOVE)
         super.onDestroy()
@@ -108,9 +122,21 @@ class CallOverlayService : Service() {
         }
         view.findViewById<Button>(R.id.btn_no).setOnClickListener {
             if (isCaptureRequested) {
+                GuardVoiceRepository.getInstance(this@CallOverlayService).insertDecision(
+                    sessionId = activeSessionId,
+                    phoneNumber = phoneNumber,
+                    decision = "Stop",
+                    reason = "User stopped capture"
+                )
                 stopAudioCapture()
             } else {
                 CallSessionRepository.markDeclinedIfWaiting(this, activeSessionId)
+                GuardVoiceRepository.getInstance(this@CallOverlayService).insertDecision(
+                    sessionId = activeSessionId,
+                    phoneNumber = phoneNumber,
+                    decision = "Decline",
+                    reason = "User declined consent"
+                )
             }
             stopSelf()
         }
@@ -131,6 +157,16 @@ class CallOverlayService : Service() {
 
     private fun startListening(phoneNumber: String, view: View) {
         isCaptureRequested = true
+        try {
+            GuardVoiceRepository.getInstance(this).insertDecision(
+                sessionId = activeSessionId,
+                phoneNumber = phoneNumber,
+                decision = "Allow",
+                reason = "User allowed call capture"
+            )
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to persist decision to SQLite", e)
+        }
         view.findViewById<TextView>(R.id.tv_verdict).text =
             getString(R.string.overlay_starting_capture)
         view.findViewById<Button>(R.id.btn_yes).apply {
@@ -174,6 +210,49 @@ class CallOverlayService : Service() {
             null -> Unit
         }
     }
+
+    private fun updateVerdictDisplay(
+        riskLevel: String?,
+        riskScore: Int,
+        transcript: String,
+        reasons: List<String>
+    ) {
+        val view = overlayView ?: return
+        val verdictView = view.findViewById<TextView>(R.id.tv_verdict)
+        val transcriptView = view.findViewById<TextView>(R.id.tv_transcript)
+        val reasonsView = view.findViewById<TextView>(R.id.tv_verdict_details)
+
+        val (displayText, color) = when (riskLevel) {
+            "Safe" -> Pair("✓ Safe call", 0xFF2E7D32.toInt())
+            "Suspicious" -> Pair("⚠ Suspicious", 0xFFF57F17.toInt())
+            "Scam" -> Pair("✗ Scam detected!", 0xFFC62828.toInt())
+            else -> Pair("Analyzing...", 0xFF1565C0.toInt())
+        }
+        verdictView.text = displayText
+        verdictView.setTextColor(color)
+        val normalizedVerdictDisplay = displayForRiskLevel(riskLevel)
+        verdictView.text = normalizedVerdictDisplay.first
+        verdictView.setTextColor(normalizedVerdictDisplay.second)
+
+        if (transcript.isNotBlank()) {
+            transcriptView.text = transcript
+            transcriptView.visibility = View.VISIBLE
+        }
+
+        if (reasons.isNotEmpty()) {
+            reasonsView.text = reasons.joinToString(" • ")
+            reasonsView.visibility = View.VISIBLE
+            reasonsView.text = reasons.joinToString(" / ")
+        }
+    }
+
+    private fun displayForRiskLevel(riskLevel: String?): Pair<String, Int> =
+        when (riskLevel) {
+            "Safe" -> Pair("Safe call", 0xFF2E7D32.toInt())
+            "Suspicious" -> Pair("Suspicious", 0xFFF57F17.toInt())
+            "Scam" -> Pair("Scam detected!", 0xFFC62828.toInt())
+            else -> Pair("Analyzing...", 0xFF1565C0.toInt())
+        }
 
     private fun stopAudioCapture() {
         try {
@@ -273,6 +352,31 @@ class CallOverlayService : Service() {
             Log.w(TAG, "Capture state receiver was already unregistered.", exception)
         } finally {
             isCaptureStateReceiverRegistered = false
+        }
+    }
+
+    private fun registerVerdictReceiver() {
+        val filter = IntentFilter(AudioCaptureService.ACTION_VERDICT_CHANGED)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(verdictReceiver, filter, RECEIVER_NOT_EXPORTED)
+            isVerdictReceiverRegistered = true
+            return
+        }
+        @Suppress("DEPRECATION")
+        registerReceiver(verdictReceiver, filter)
+        isVerdictReceiverRegistered = true
+    }
+
+    private fun unregisterVerdictReceiver() {
+        if (!isVerdictReceiverRegistered) {
+            return
+        }
+        try {
+            unregisterReceiver(verdictReceiver)
+        } catch (exception: RuntimeException) {
+            Log.w(TAG, "Verdict receiver was already unregistered.", exception)
+        } finally {
+            isVerdictReceiverRegistered = false
         }
     }
 

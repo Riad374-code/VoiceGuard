@@ -1,7 +1,31 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
+}
+
+fun loadRootProperties(fileName: String): Properties =
+    Properties().apply {
+        val propertiesFile = rootProject.file(fileName)
+        if (propertiesFile.isFile) {
+            propertiesFile.inputStream().use(::load)
+        }
+    }
+
+val dotenvProperties = loadRootProperties(".env")
+val localProperties = loadRootProperties("local.properties")
+
+fun buildConfigString(name: String, fallback: String = ""): String {
+    val rawValue = providers.environmentVariable(name).orNull
+        ?: dotenvProperties.getProperty(name)
+        ?: localProperties.getProperty(name)
+        ?: fallback
+    val escapedValue = rawValue
+        .replace("\\", "\\\\")
+        .replace("\"", "\\\"")
+    return "\"$escapedValue\""
 }
 
 android {
@@ -16,10 +40,17 @@ android {
         versionName = "0.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField("String", "GROQ_API_KEY", buildConfigString("GROQ_API_KEY"))
+        buildConfigField(
+            "String",
+            "GROQ_WHISPER_MODEL",
+            buildConfigString("GROQ_WHISPER_MODEL", "whisper-large-v3-turbo")
+        )
     }
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     compileOptions {
