@@ -25,6 +25,7 @@ The long-term product goal is to transcribe approved calls, analyze conversation
 - Detects incoming phone calls through `CallScreeningService`
 - Always allows calls through while showing a consent popup
 - Starts speakerphone and microphone capture only after the user allows tracking
+- Uses a transparent capture handoff activity so Android 14+ can start microphone capture from a visible app state
 - Saves local call-session history with popup choice, capture status, streamed audio duration, and future verdict fields
 - Requests runtime phone-state, contacts, notification, and microphone permissions
 - Guides users to grant overlay access and the Android Caller ID role

@@ -15,4 +15,14 @@
         <item name="android:navigationBarColor">#052B57</item>
         <item name="android:statusBarColor">#052B57</item>
     </style>
+
+    <style name="Theme.GuardVoice.CaptureHandoff" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:backgroundDimEnabled">false</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowActionBar">false</item>
+        <item name="android:windowDisablePreview">true</item>
+    </style>
 </resources>

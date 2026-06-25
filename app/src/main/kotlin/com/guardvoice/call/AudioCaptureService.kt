@@ -346,11 +346,7 @@ class AudioCaptureService : Service() {
         ) == PackageManager.PERMISSION_GRANTED
 
     private fun publishState(state: CaptureState) {
-        sendBroadcast(
-            Intent(ACTION_CAPTURE_STATE_CHANGED)
-                .setPackage(packageName)
-                .putExtra(EXTRA_CAPTURE_STATE, state.name)
-        )
+        publishCaptureState(this, state)
     }
 
     private fun displayNumber(phoneNumber: String): String =
@@ -406,6 +402,14 @@ class AudioCaptureService : Service() {
             val intent = Intent(context, AudioCaptureService::class.java)
                 .setAction(ACTION_STOP)
             context.startService(intent)
+        }
+
+        fun publishCaptureState(context: Context, state: CaptureState) {
+            context.sendBroadcast(
+                Intent(ACTION_CAPTURE_STATE_CHANGED)
+                    .setPackage(context.packageName)
+                    .putExtra(EXTRA_CAPTURE_STATE, state.name)
+            )
         }
     }
 }

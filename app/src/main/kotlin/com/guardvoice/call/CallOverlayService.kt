@@ -139,13 +139,13 @@ class CallOverlayService : Service() {
         }
         view.findViewById<Button>(R.id.btn_no).text = getString(R.string.overlay_stop)
         try {
-            AudioCaptureService.start(this, phoneNumber, activeSessionId)
+            CallCaptureHandoffActivity.start(this, phoneNumber, activeSessionId)
         } catch (exception: RuntimeException) {
             Log.e(TAG, "Could not start audio capture service.", exception)
             CallSessionRepository.markFailed(
                 this,
                 activeSessionId,
-                "Microphone tracking could not start."
+                "Microphone tracking could not start from the call popup."
             )
             updateCaptureState(AudioCaptureService.CaptureState.Failed)
         }
