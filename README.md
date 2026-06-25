@@ -25,6 +25,7 @@ The long-term product goal is to transcribe approved calls, analyze conversation
 - Detects incoming phone calls through `CallScreeningService`
 - Always allows calls through while showing a consent popup
 - Starts speakerphone and microphone capture only after the user allows tracking
+- Saves local call-session history with popup choice, capture status, streamed audio duration, and future verdict fields
 - Requests runtime phone-state, contacts, notification, and microphone permissions
 - Guides users to grant overlay access and the Android Caller ID role
 - Includes setup, dashboard, call popup, call summary, settings, account, and billing screens
@@ -32,7 +33,7 @@ The long-term product goal is to transcribe approved calls, analyze conversation
 - Includes unit tests for call-screening decisions and account validation
 
 > [!NOTE]
-> GuardVoice is currently a prototype. Live audio transcription, AI scam analysis, persistent call history, and production billing/authentication are not implemented yet.
+> GuardVoice is currently a prototype. Local call-session history is implemented, but live audio transcription, AI scam analysis, backend sync, and production billing/authentication are not implemented yet.
 
 ## Technology
 
@@ -111,6 +112,7 @@ app/src/main/
 |-- kotlin/com/guardvoice/
 |   |-- account/     # Account models and validation
 |   |-- call/        # Incoming call screening
+|   |-- data/        # Local call-session history
 |   `-- ui/          # Compose app, screens, components, and theme
 `-- res/
     |-- drawable/    # Popup and launch assets
@@ -124,7 +126,7 @@ app/src/main/
 - Add speech-to-text processing
 - Analyze transcripts for scam patterns
 - Update live risk predictions during calls
-- Store call summaries and prediction history locally
+- Sync call summaries and prediction history with a production backend
 - Replace prototype account and billing state with production services
 
 ## Privacy Direction

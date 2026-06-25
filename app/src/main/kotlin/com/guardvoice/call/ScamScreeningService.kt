@@ -3,6 +3,7 @@ package com.guardvoice.call
 import android.telecom.Call
 import android.telecom.CallScreeningService
 import android.util.Log
+import com.guardvoice.data.CallSessionRepository
 
 class ScamScreeningService : CallScreeningService() {
     override fun onScreenCall(callDetails: Call.Details) {
@@ -16,11 +17,12 @@ class ScamScreeningService : CallScreeningService() {
     }
 
     private fun showIncomingCallOverlay(callDetails: Call.Details) {
-        val phoneNumber = callDetails.handle?.schemeSpecificPart
+        val phoneNumber = callDetails.handle?.schemeSpecificPart.orEmpty()
         val isIncoming = callDetails.callDirection == Call.Details.DIRECTION_INCOMING
 
         if (shouldReportIncomingCall(isIncoming)) {
-            CallOverlayService.show(this, phoneNumber.orEmpty())
+            val sessionId = CallSessionRepository.recordDetected(this, phoneNumber)
+            CallOverlayService.show(this, phoneNumber, sessionId)
         }
     }
 

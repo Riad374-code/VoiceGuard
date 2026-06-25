@@ -25,6 +25,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.guardvoice.MainActivity
 import com.guardvoice.R
+import com.guardvoice.data.CallSessionRepository
 
 class CallOverlayService : Service() {
     private val windowManager by lazy { getSystemService(WindowManager::class.java) }
@@ -44,6 +45,7 @@ class CallOverlayService : Service() {
     private var overlayView: View? = null
     private var isCaptureRequested = false
     private var isCaptureStateReceiverRegistered = false
+    private var activeSessionId = ""
 
     override fun onCreate() {
         super.onCreate()
@@ -62,12 +64,18 @@ class CallOverlayService : Service() {
         }
 
         if (intent?.action == ACTION_SHOW) {
-            showOverlay(intent.getStringExtra(EXTRA_PHONE_NUMBER).orEmpty())
+            showOverlay(
+                phoneNumber = intent.getStringExtra(EXTRA_PHONE_NUMBER).orEmpty(),
+                sessionId = intent.getStringExtra(EXTRA_SESSION_ID).orEmpty()
+            )
         }
         return START_NOT_STICKY
     }
 
     override fun onDestroy() {
+        if (!isCaptureRequested) {
+            CallSessionRepository.markDeclinedIfWaiting(this, activeSessionId)
+        }
         removeOverlay()
         unregisterCaptureStateReceiver()
         callStateMonitor.stop()
@@ -77,8 +85,14 @@ class CallOverlayService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    private fun showOverlay(phoneNumber: String) {
+    private fun showOverlay(phoneNumber: String, sessionId: String) {
+        activeSessionId = sessionId
         if (!Settings.canDrawOverlays(this)) {
+            CallSessionRepository.markFailed(
+                this,
+                activeSessionId,
+                "Display-over-apps permission is missing, so the call popup could not be shown."
+            )
             stopSelf()
             return
         }
@@ -95,6 +109,8 @@ class CallOverlayService : Service() {
         view.findViewById<Button>(R.id.btn_no).setOnClickListener {
             if (isCaptureRequested) {
                 stopAudioCapture()
+            } else {
+                CallSessionRepository.markDeclinedIfWaiting(this, activeSessionId)
             }
             stopSelf()
         }
@@ -104,6 +120,11 @@ class CallOverlayService : Service() {
             overlayView = view
         } catch (exception: RuntimeException) {
             Log.e(TAG, "Could not show call overlay.", exception)
+            CallSessionRepository.markFailed(
+                this,
+                activeSessionId,
+                "The call popup could not be attached to the screen."
+            )
             stopSelf()
         }
     }
@@ -118,9 +139,14 @@ class CallOverlayService : Service() {
         }
         view.findViewById<Button>(R.id.btn_no).text = getString(R.string.overlay_stop)
         try {
-            AudioCaptureService.start(this, phoneNumber)
+            AudioCaptureService.start(this, phoneNumber, activeSessionId)
         } catch (exception: RuntimeException) {
             Log.e(TAG, "Could not start audio capture service.", exception)
+            CallSessionRepository.markFailed(
+                this,
+                activeSessionId,
+                "Microphone tracking could not start."
+            )
             updateCaptureState(AudioCaptureService.CaptureState.Failed)
         }
     }
@@ -254,15 +280,17 @@ class CallOverlayService : Service() {
         private const val TAG = "CallOverlayService"
         private const val ACTION_SHOW = "com.guardvoice.action.SHOW_CALL_OVERLAY"
         private const val EXTRA_PHONE_NUMBER = "extra_phone_number"
+        private const val EXTRA_SESSION_ID = "extra_session_id"
         private const val NOTIFICATION_CHANNEL_ID = "guardvoice_call_monitoring"
         private const val OVERLAY_NOTIFICATION_ID = 2001
         private const val NOTIFICATION_REQUEST_CODE = 43
         private const val OVERLAY_TOP_OFFSET_PX = 96
 
-        fun show(context: Context, phoneNumber: String) {
+        fun show(context: Context, phoneNumber: String, sessionId: String) {
             val intent = Intent(context, CallOverlayService::class.java)
                 .setAction(ACTION_SHOW)
                 .putExtra(EXTRA_PHONE_NUMBER, phoneNumber)
+                .putExtra(EXTRA_SESSION_ID, sessionId)
             ContextCompat.startForegroundService(context, intent)
         }
     }

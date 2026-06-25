@@ -12,11 +12,16 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.guardvoice.data.CallSessionRepository
+import com.guardvoice.data.CallSessionStatus
 import com.guardvoice.ui.components.AppSurface
 import com.guardvoice.ui.components.BreathingWave
 import com.guardvoice.ui.components.PrimaryAction
@@ -27,19 +32,33 @@ import com.guardvoice.ui.model.AppDestination
 import com.guardvoice.ui.model.CallInsight
 import com.guardvoice.ui.model.PredictionSummary
 import com.guardvoice.ui.model.RiskLevel
-import com.guardvoice.ui.model.detectedCalls
-import com.guardvoice.ui.model.predictionSummary
+import com.guardvoice.ui.model.callInsightsFromSessions
+import com.guardvoice.ui.model.predictionSummaryFromSessions
 import com.guardvoice.ui.theme.GuardColors
 import com.guardvoice.ui.theme.GuardRadius
 import com.guardvoice.ui.theme.GuardSpace
 
 @Composable
 fun DashboardScreen(onNavigate: (AppDestination) -> Unit) {
+    val context = LocalContext.current
+    val sessions by CallSessionRepository.observe(context).collectAsState()
+    val predictionSummary = predictionSummaryFromSessions(sessions)
+    val detectedCalls = callInsightsFromSessions(sessions)
+    val hasActiveCall = sessions.any { session ->
+        session.status == CallSessionStatus.Detected || session.status == CallSessionStatus.Listening
+    }
+
     Column(verticalArrangement = Arrangement.spacedBy(GuardSpace.Large)) {
         AppSurface {
             Column(verticalArrangement = Arrangement.spacedBy(GuardSpace.Large)) {
-                DashboardHeader()
-                PredictionOverview(summary = predictionSummary)
+                DashboardHeader(
+                    totalSessions = sessions.size,
+                    hasActiveCall = hasActiveCall
+                )
+                PredictionOverview(
+                    summary = predictionSummary,
+                    totalSessions = sessions.size
+                )
                 PrimaryAction(
                     modifier = Modifier.fillMaxWidth(),
                     text = "Preview call popup",
@@ -55,7 +74,7 @@ fun DashboardScreen(onNavigate: (AppDestination) -> Unit) {
 }
 
 @Composable
-private fun DashboardHeader() {
+private fun DashboardHeader(totalSessions: Int, hasActiveCall: Boolean) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -64,27 +83,31 @@ private fun DashboardHeader() {
         Column(modifier = Modifier.weight(1f)) {
             SectionLabel(text = "User dashboard")
             Text(
-                text = "No call analysis yet.",
+                text = if (totalSessions == 0) {
+                    "No call sessions yet."
+                } else {
+                    "$totalSessions call sessions tracked."
+                },
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Black,
                 color = GuardColors.Ink
             )
             Text(
-                text = "This dashboard will populate from CallScreeningService after detection logic is connected.",
+                text = "Incoming calls, popup choices, microphone streaming status, and future AI verdicts use the same local history.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = GuardColors.InkMuted
             )
         }
         StatusPill(
-            text = "Idle",
-            riskLevel = RiskLevel.Safe,
-            isLive = true
+            text = if (hasActiveCall) "Live" else "Idle",
+            riskLevel = if (hasActiveCall) RiskLevel.Pending else RiskLevel.Safe,
+            isLive = hasActiveCall
         )
     }
 }
 
 @Composable
-private fun PredictionOverview(summary: PredictionSummary) {
+private fun PredictionOverview(summary: PredictionSummary, totalSessions: Int) {
     Column(verticalArrangement = Arrangement.spacedBy(GuardSpace.Medium)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -109,10 +132,15 @@ private fun PredictionOverview(summary: PredictionSummary) {
                 modifier = Modifier.weight(1f)
             )
         }
-        if (summary.totalCount == 0) {
+        if (totalSessions == 0) {
             EmptyState(
                 title = "Prediction history is empty",
                 body = "Once a user allows tracking on a call, verdicts will be grouped here by safe, risky, and scam."
+            )
+        } else if (summary.totalCount == 0) {
+            EmptyState(
+                title = "AI verdicts pending",
+                body = "Call sessions are being saved now. Safe, risky, and scam counts will update when the analyzer writes verdicts."
             )
         }
     }
@@ -154,7 +182,7 @@ private fun DetectedCallsSection(calls: List<CallInsight>) {
         if (calls.isEmpty()) {
             EmptyState(
                 title = "No detected callers",
-                body = "Callers will appear here after the future verdict and history pipeline is connected."
+                body = "Callers will appear here after Android sends the first incoming call to GuardVoice."
             )
             return
         }
@@ -202,7 +230,7 @@ private fun DetectedCallRow(call: CallInsight) {
             )
         }
         Text(
-            text = call.riskLevel.label,
+            text = "${call.riskLevel.label} ${call.time}",
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.Bold,
             color = call.riskLevel.color

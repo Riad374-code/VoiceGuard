@@ -13,6 +13,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -20,8 +21,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.guardvoice.data.CallSessionRepository
+import com.guardvoice.data.audioDurationSeconds
 import com.guardvoice.ui.components.AppSurface
 import com.guardvoice.ui.components.PrimaryAction
 import com.guardvoice.ui.components.SectionLabel
@@ -29,7 +33,6 @@ import com.guardvoice.ui.components.SecondaryAction
 import com.guardvoice.ui.model.BillingPlan
 import com.guardvoice.ui.model.PlanTier
 import com.guardvoice.ui.model.billingPlans
-import com.guardvoice.ui.model.billingUsage
 import com.guardvoice.ui.theme.GuardColors
 import com.guardvoice.ui.theme.GuardRadius
 import com.guardvoice.ui.theme.GuardSpace
@@ -73,7 +76,12 @@ fun BillingScreen() {
 
 @Composable
 private fun BillingUsagePanel() {
-    val usage = billingUsage
+    val context = LocalContext.current
+    val sessions by CallSessionRepository.observe(context).collectAsState()
+    val trackedMinutes = sessions.sumOf { session ->
+        audioDurationSeconds(session.audioBytesStreamed)
+    } / SECONDS_PER_MINUTE
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -89,25 +97,25 @@ private fun BillingUsagePanel() {
         ) {
             Column {
                 Text(
-                    text = "Analyzed minutes",
+                    text = "Tracked minutes",
                     style = MaterialTheme.typography.labelMedium,
                     color = GuardColors.InkMuted
                 )
                 Text(
-                    text = usage.analyzedMinutes.toString(),
+                    text = trackedMinutes.toString(),
                     style = MaterialTheme.typography.headlineLarge,
                     fontWeight = FontWeight.Black,
                     color = GuardColors.Ink
                 )
             }
             Text(
-                text = usage.renewalLabel,
+                text = "Local usage only",
                 style = MaterialTheme.typography.labelMedium,
                 color = GuardColors.InkMuted
             )
         }
         Text(
-            text = "Included minutes will be shown after products are configured.",
+            text = "Billing and backend quotas are not connected yet. This count comes from local call-session history.",
             style = MaterialTheme.typography.bodySmall,
             color = GuardColors.InkMuted
         )
@@ -216,3 +224,5 @@ private fun FeatureList(features: List<String>) {
         }
     }
 }
+
+private const val SECONDS_PER_MINUTE = 60

@@ -22,6 +22,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.guardvoice.MainActivity
 import com.guardvoice.R
+import com.guardvoice.data.CallSessionRepository
 
 class AudioCaptureService : Service() {
     private val audioManager by lazy { getSystemService(AudioManager::class.java) }
@@ -36,6 +37,10 @@ class AudioCaptureService : Service() {
     private var captureThread: Thread? = null
     private var previousAudioMode = AudioManager.MODE_NORMAL
     private var wasSpeakerphoneOn = false
+    private var activeSessionId = ""
+    private val progressLock = Any()
+    private var pendingAudioBytes = 0L
+    private var pendingAudioChunks = 0
 
     @Volatile
     private var isCaptureRunning = false
@@ -48,7 +53,10 @@ class AudioCaptureService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_START -> startCapture(intent.getStringExtra(EXTRA_PHONE_NUMBER).orEmpty())
+            ACTION_START -> startCapture(
+                phoneNumber = intent.getStringExtra(EXTRA_PHONE_NUMBER).orEmpty(),
+                sessionId = intent.getStringExtra(EXTRA_SESSION_ID).orEmpty()
+            )
             ACTION_STOP -> {
                 stopCapture()
                 stopSelf()
@@ -65,8 +73,14 @@ class AudioCaptureService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    private fun startCapture(phoneNumber: String) {
+    private fun startCapture(phoneNumber: String, sessionId: String) {
+        activeSessionId = sessionId
         if (!hasAudioPermission()) {
+            CallSessionRepository.markFailed(
+                this,
+                activeSessionId,
+                "Microphone permission is missing."
+            )
             publishState(CaptureState.Failed)
             stopSelf()
             return
@@ -82,6 +96,11 @@ class AudioCaptureService : Service() {
                 val recorder = buildRecorder() ?: run {
                     restoreAudioMode()
                     stopForeground(STOP_FOREGROUND_REMOVE)
+                    CallSessionRepository.markFailed(
+                        this,
+                        activeSessionId,
+                        "Audio recorder could not be initialized."
+                    )
                     publishState(CaptureState.Failed)
                     stopSelf()
                     return
@@ -91,6 +110,7 @@ class AudioCaptureService : Service() {
                 captureThread = Thread({ captureLoop(recorder) }, "GuardVoiceAudioCapture").apply {
                     start()
                 }
+                CallSessionRepository.markListening(this, activeSessionId)
                 publishState(CaptureState.Listening)
             }
         } catch (exception: RuntimeException) {
@@ -103,6 +123,11 @@ class AudioCaptureService : Service() {
             }
             restoreAudioMode()
             stopForeground(STOP_FOREGROUND_REMOVE)
+            CallSessionRepository.markFailed(
+                this,
+                activeSessionId,
+                "Audio capture startup failed."
+            )
             publishState(CaptureState.Failed)
             stopSelf()
         }
@@ -125,8 +150,10 @@ class AudioCaptureService : Service() {
         if (Thread.currentThread() != threadToJoin) {
             threadToJoin?.join(JOIN_TIMEOUT_MS)
         }
+        flushAudioProgress()
         recorderToRelease?.releaseSafely()
         restoreAudioMode()
+        CallSessionRepository.markCompleted(this, activeSessionId)
         publishState(CaptureState.Stopped)
         stopForeground(STOP_FOREGROUND_REMOVE)
     }
@@ -139,7 +166,8 @@ class AudioCaptureService : Service() {
             while (isCaptureRunning) {
                 val bytesRead = recorder.read(buffer, 0, buffer.size)
                 if (bytesRead > 0) {
-                    CallAudioStream.accept(buffer.copyOf(bytesRead))
+                    CallAudioStream.accept(activeSessionId, buffer.copyOf(bytesRead))
+                    recordAudioProgress(bytesRead)
                 } else if (bytesRead < 0) {
                     Log.w(TAG, "AudioRecord read failed with code $bytesRead.")
                     didFail = true
@@ -165,10 +193,46 @@ class AudioCaptureService : Service() {
             captureThread = null
         }
         recorder.releaseSafely()
+        flushAudioProgress()
         restoreAudioMode()
         stopForeground(STOP_FOREGROUND_REMOVE)
+        CallSessionRepository.markFailed(
+            this,
+            activeSessionId,
+            "Audio stream stopped because microphone reading failed."
+        )
         publishState(CaptureState.Failed)
         stopSelf()
+    }
+
+    private fun recordAudioProgress(bytesRead: Int) {
+        val shouldFlush = synchronized(progressLock) {
+            pendingAudioBytes += bytesRead.toLong()
+            pendingAudioChunks += 1
+            pendingAudioBytes >= PROGRESS_FLUSH_BYTES
+        }
+        if (shouldFlush) {
+            flushAudioProgress()
+        }
+    }
+
+    private fun flushAudioProgress() {
+        val progress = synchronized(progressLock) {
+            if (pendingAudioBytes <= 0L || pendingAudioChunks <= 0) {
+                return
+            }
+            val byteCount = pendingAudioBytes
+            val chunkCount = pendingAudioChunks
+            pendingAudioBytes = 0L
+            pendingAudioChunks = 0
+            AudioProgress(byteCount = byteCount, chunkCount = chunkCount)
+        }
+        CallSessionRepository.recordAudioProgress(
+            context = this,
+            sessionId = activeSessionId,
+            byteCount = progress.byteCount,
+            chunkCount = progress.chunkCount
+        )
     }
 
     private fun buildRecorder(): AudioRecord? {
@@ -308,6 +372,11 @@ class AudioCaptureService : Service() {
         Failed
     }
 
+    private data class AudioProgress(
+        val byteCount: Long,
+        val chunkCount: Int
+    )
+
     companion object {
         const val ACTION_CAPTURE_STATE_CHANGED =
             "com.guardvoice.action.CAPTURE_STATE_CHANGED"
@@ -315,18 +384,21 @@ class AudioCaptureService : Service() {
         private const val ACTION_START = "com.guardvoice.action.START_CAPTURE"
         private const val ACTION_STOP = "com.guardvoice.action.STOP_CAPTURE"
         private const val EXTRA_PHONE_NUMBER = "extra_phone_number"
+        private const val EXTRA_SESSION_ID = "extra_session_id"
         private const val TAG = "AudioCaptureService"
         private const val NOTIFICATION_CHANNEL_ID = "guardvoice_call_monitoring"
         private const val CAPTURE_NOTIFICATION_ID = 2002
         private const val NOTIFICATION_REQUEST_CODE = 44
         private const val SAMPLE_RATE_HZ = 16_000
         private const val AUDIO_BUFFER_BYTES = 3_200
+        private const val PROGRESS_FLUSH_BYTES = 32_000L
         private const val JOIN_TIMEOUT_MS = 500L
 
-        fun start(context: Context, phoneNumber: String) {
+        fun start(context: Context, phoneNumber: String, sessionId: String) {
             val intent = Intent(context, AudioCaptureService::class.java)
                 .setAction(ACTION_START)
                 .putExtra(EXTRA_PHONE_NUMBER, phoneNumber)
+                .putExtra(EXTRA_SESSION_ID, sessionId)
             ContextCompat.startForegroundService(context, intent)
         }
 
