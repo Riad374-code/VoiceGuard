@@ -120,7 +120,7 @@ val predictionSummary = PredictionSummary(
 )
 
 val demoAnalysis = LiveAnalysis(
-    caller = "Unsaved caller",
+    caller = "Incoming caller",
     elapsed = "00:00",
     riskLevel = RiskLevel.Pending,
     riskScore = 0,
@@ -160,8 +160,8 @@ val billingUsage = BillingUsage(
 
 val defaultSettings = listOf(
     SettingItem(
-        title = "Ask before every unsaved call",
-        description = "Keep analysis opt-in for each unknown number.",
+        title = "Ask before every call",
+        description = "Keep analysis opt-in for each incoming number.",
         isEnabled = true
     ),
     SettingItem(

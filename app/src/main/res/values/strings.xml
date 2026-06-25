@@ -4,5 +4,16 @@
     <string name="overlay_allow">Allow tracking</string>
     <string name="overlay_decline">Not now</string>
     <string name="overlay_body">GuardVoice can listen only after you allow this call. Speaker mode may be used so both sides are audible.</string>
-    <string name="overlay_title">Unknown caller</string>
+    <string name="overlay_title">Incoming caller</string>
+    <string name="overlay_waiting_for_consent">Waiting for consent</string>
+    <string name="overlay_starting_capture">Turning on speaker and microphone...</string>
+    <string name="overlay_listening">Listening</string>
+    <string name="overlay_stop">Stop</string>
+    <string name="overlay_capture_active">Speaker mode is on. Listening from microphone for future scam analysis.</string>
+    <string name="overlay_capture_failed">Could not start microphone tracking. Check microphone permission and try again.</string>
+    <string name="call_notification_channel">GuardVoice call monitoring</string>
+    <string name="overlay_notification_title">GuardVoice call popup</string>
+    <string name="overlay_notification_text">Waiting for your per-call choice.</string>
+    <string name="capture_notification_title">GuardVoice is listening</string>
+    <string name="capture_notification_text">Speaker mode and microphone are active for %1$s.</string>
 </resources>

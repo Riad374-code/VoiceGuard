@@ -23,7 +23,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="10dp"
-        android:text="Unsaved caller"
+        android:text="@string/overlay_title"
         android:textColor="#1D1A16"
         android:textSize="22sp"
         android:textStyle="bold" />

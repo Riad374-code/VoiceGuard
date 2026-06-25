@@ -1,10 +1,8 @@
 package com.guardvoice.call
 
-internal fun shouldReportUnsavedIncomingCall(
+internal fun shouldReportIncomingCall(
     isIncoming: Boolean,
-    phoneNumber: String?,
-    isSavedContact: Boolean
+    phoneNumber: String?
 ): Boolean =
     isIncoming &&
-        !phoneNumber.isNullOrBlank() &&
-        !isSavedContact
+        !phoneNumber.isNullOrBlank()

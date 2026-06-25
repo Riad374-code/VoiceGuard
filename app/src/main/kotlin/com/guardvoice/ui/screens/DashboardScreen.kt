@@ -42,7 +42,7 @@ fun DashboardScreen(onNavigate: (AppDestination) -> Unit) {
                 PredictionOverview(summary = predictionSummary)
                 PrimaryAction(
                     modifier = Modifier.fillMaxWidth(),
-                    text = "Preview unsaved call popup",
+                    text = "Preview call popup",
                     onClick = { onNavigate(AppDestination.Overlay) }
                 )
             }
@@ -64,7 +64,7 @@ private fun DashboardHeader() {
         Column(modifier = Modifier.weight(1f)) {
             SectionLabel(text = "User dashboard")
             Text(
-                text = "No unsaved calls detected yet.",
+                text = "No call analysis yet.",
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Black,
                 color = GuardColors.Ink
@@ -112,7 +112,7 @@ private fun PredictionOverview(summary: PredictionSummary) {
         if (summary.totalCount == 0) {
             EmptyState(
                 title = "Prediction history is empty",
-                body = "Once a user allows tracking on an unsaved call, verdicts will be grouped here by safe, risky, and scam."
+                body = "Once a user allows tracking on a call, verdicts will be grouped here by safe, risky, and scam."
             )
         }
     }
@@ -150,11 +150,11 @@ private fun PredictionTile(
 @Composable
 private fun DetectedCallsSection(calls: List<CallInsight>) {
     Column(verticalArrangement = Arrangement.spacedBy(GuardSpace.Medium)) {
-        SectionLabel(text = "Detected unsaved numbers")
+        SectionLabel(text = "Detected callers")
         if (calls.isEmpty()) {
             EmptyState(
-                title = "No detected numbers",
-                body = "Saved contacts are ignored. Unknown numbers will appear here only after the Android call-screening service is implemented."
+                title = "No detected callers",
+                body = "Callers will appear here after the future verdict and history pipeline is connected."
             )
             return
         }

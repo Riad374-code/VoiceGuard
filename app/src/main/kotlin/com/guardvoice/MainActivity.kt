@@ -5,6 +5,7 @@ import android.app.role.RoleManager
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
@@ -21,14 +22,6 @@ import com.guardvoice.ui.model.PermissionAction
 import com.guardvoice.ui.model.PermissionItem
 import com.guardvoice.ui.model.PermissionState
 import com.guardvoice.ui.theme.GuardVoiceTheme
-
-private val RUNTIME_PERMISSIONS = arrayOf(
-    Manifest.permission.RECORD_AUDIO,
-    Manifest.permission.READ_CONTACTS,
-    Manifest.permission.READ_PHONE_STATE,
-    Manifest.permission.READ_CALL_LOG,
-    Manifest.permission.ANSWER_PHONE_CALLS
-)
 
 class MainActivity : ComponentActivity() {
     private var permissionItems by mutableStateOf<List<PermissionItem>>(emptyList())
@@ -56,7 +49,7 @@ class MainActivity : ComponentActivity() {
                     onPermissionAction = { action ->
                         when (action) {
                             PermissionAction.RequestRuntimePermissions -> {
-                                runtimePermissionLauncher.launch(RUNTIME_PERMISSIONS)
+                                runtimePermissionLauncher.launch(runtimePermissions())
                             }
                             PermissionAction.OpenOverlaySettings -> {
                                 settingsLauncher.launch(overlaySettingsIntent())
@@ -77,7 +70,8 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun buildPermissionItems(): List<PermissionItem> {
-        val hasRuntimePermissions = RUNTIME_PERMISSIONS.all { permission ->
+        val runtimePermissions = runtimePermissions()
+        val hasRuntimePermissions = runtimePermissions.all { permission ->
             hasPermission(permission)
         }
         val hasOverlayPermission = Settings.canDrawOverlays(this)
@@ -85,7 +79,7 @@ class MainActivity : ComponentActivity() {
         val runtimeAction = if (hasRuntimePermissions) null else PermissionAction.RequestRuntimePermissions
         val runtimeActionLabel = if (hasRuntimePermissions) null else "Grant app permissions"
 
-        return listOf(
+        val coreItems = listOf(
             runtimePermissionItem(
                 title = "Microphone",
                 description = "Used only after per-call consent.",
@@ -94,19 +88,27 @@ class MainActivity : ComponentActivity() {
                 actionLabel = runtimeActionLabel
             ),
             runtimePermissionItem(
-                title = "Contacts",
-                description = "Skips saved callers automatically.",
-                isReady = hasPermission(Manifest.permission.READ_CONTACTS),
-                action = runtimeAction,
-                actionLabel = runtimeActionLabel
-            ),
-            runtimePermissionItem(
                 title = "Phone state",
-                description = "Detects incoming calls from unknown numbers.",
+                description = "Detects incoming calls and stops tracking when a call ends.",
                 isReady = hasPhonePermissions(),
                 action = runtimeAction,
                 actionLabel = runtimeActionLabel
-            ),
+            )
+        )
+        val notificationItems = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            listOf(
+                runtimePermissionItem(
+                    title = "Notifications",
+                    description = "Shows Android's required active-call service notice.",
+                    isReady = hasPermission(Manifest.permission.POST_NOTIFICATIONS),
+                    action = runtimeAction,
+                    actionLabel = runtimeActionLabel
+                )
+            )
+        } else {
+            emptyList()
+        }
+        val specialItems = listOf(
             PermissionItem(
                 title = "Display over apps",
                 description = "Shows the call popup above the dialer.",
@@ -116,12 +118,14 @@ class MainActivity : ComponentActivity() {
             ),
             PermissionItem(
                 title = "Caller ID role",
-                description = "Lets GuardVoice detect incoming unknown callers.",
+                description = "Lets GuardVoice detect incoming callers.",
                 state = permissionState(hasCallerIdRole),
                 action = if (hasCallerIdRole) null else PermissionAction.OpenCallerIdSettings,
                 actionLabel = if (hasCallerIdRole) null else "Set as Caller ID app"
             )
         )
+
+        return coreItems + notificationItems + specialItems
     }
 
     private fun runtimePermissionItem(
@@ -143,9 +147,7 @@ class MainActivity : ComponentActivity() {
         ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
 
     private fun hasPhonePermissions(): Boolean =
-        hasPermission(Manifest.permission.READ_PHONE_STATE) &&
-            hasPermission(Manifest.permission.READ_CALL_LOG) &&
-            hasPermission(Manifest.permission.ANSWER_PHONE_CALLS)
+        hasPermission(Manifest.permission.READ_PHONE_STATE)
 
     private fun hasCallScreeningRole(): Boolean {
         val roleManager = getSystemService(RoleManager::class.java)
@@ -171,3 +173,12 @@ class MainActivity : ComponentActivity() {
 
 private fun permissionState(isReady: Boolean): PermissionState =
     if (isReady) PermissionState.Ready else PermissionState.NeedsAction
+
+private fun runtimePermissions(): Array<String> =
+    buildList {
+        add(Manifest.permission.RECORD_AUDIO)
+        add(Manifest.permission.READ_PHONE_STATE)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            add(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }.toTypedArray()

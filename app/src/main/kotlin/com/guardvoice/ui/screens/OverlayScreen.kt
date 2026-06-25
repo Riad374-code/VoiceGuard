@@ -54,7 +54,7 @@ fun OverlayScreen(onNavigate: (AppDestination) -> Unit) {
                     color = GuardColors.Ink
                 )
                 Text(
-                    text = "This preview mirrors the floating overlay that will appear on unsaved incoming calls. It should feel quick, explicit, and hard to mistake for silent recording.",
+                    text = "This preview mirrors the floating overlay that appears on incoming calls. It should feel quick, explicit, and hard to mistake for silent recording.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = GuardColors.InkMuted
                 )
@@ -116,13 +116,13 @@ private fun MockDialerBackground() {
             color = GuardColors.Surface.copy(alpha = 0.68f)
         )
         Text(
-            text = "Unsaved caller",
+            text = "Incoming caller",
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Black,
             color = GuardColors.Surface
         )
         Text(
-            text = "Not in contacts",
+            text = "Per-call consent required",
             style = MaterialTheme.typography.bodySmall,
             color = GuardColors.Surface.copy(alpha = 0.54f)
         )

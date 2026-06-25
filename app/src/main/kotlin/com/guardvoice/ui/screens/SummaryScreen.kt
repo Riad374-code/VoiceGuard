@@ -36,7 +36,7 @@ fun SummaryScreen(onNavigate: (AppDestination) -> Unit) {
                     color = GuardColors.Ink
                 )
                 Text(
-                    text = "After the call services and AI analyzer are connected, this screen will show the final verdict, reasons, transcript summary, and actions for the detected unsaved number.",
+                    text = "After the AI analyzer is connected, this screen will show the final verdict, reasons, transcript summary, and actions for the detected caller.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = GuardColors.InkMuted
                 )

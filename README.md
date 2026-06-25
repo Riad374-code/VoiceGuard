@@ -5,7 +5,7 @@
 <h1 align="center">GuardVoice</h1>
 
 <p align="center">
-  A consent-first Android app for detecting unknown callers and building toward real-time AI scam call protection.
+  A consent-first Android app for preparing real-time AI scam call protection.
 </p>
 
 ## Demo
@@ -16,16 +16,16 @@
 
 ## Overview
 
-GuardVoice is an Android prototype that stays idle for saved contacts and reacts to incoming calls from unknown numbers. The app guides users through the permissions required for call screening, displays a consent-focused call popup, and provides dashboard, summary, settings, account, and billing interfaces.
+GuardVoice is an Android prototype that reacts to incoming phone calls, asks for per-call consent, and can start speakerphone plus microphone capture for a future AI scam detector. The app guides users through the permissions required for call screening, displays a consent-focused call popup, and provides dashboard, summary, settings, account, and billing interfaces.
 
-The long-term product goal is to transcribe approved calls, analyze conversations for scam indicators, and present a live risk verdict without monitoring saved contacts or recording before the user gives consent.
+The long-term product goal is to transcribe approved calls, analyze conversations for scam indicators, and present a live risk verdict without recording before the user gives consent.
 
 ## Current Features
 
-- Detects incoming calls from unsaved numbers through `CallScreeningService`
-- Always allows calls through while reporting eligible unknown callers to the app
-- Checks contacts locally to avoid acting on saved callers
-- Requests runtime phone, contacts, and microphone permissions
+- Detects incoming phone calls through `CallScreeningService`
+- Always allows calls through while showing a consent popup
+- Starts speakerphone and microphone capture only after the user allows tracking
+- Requests runtime phone-state, notification, and microphone permissions
 - Guides users to grant overlay access and the Android Caller ID role
 - Includes setup, dashboard, call popup, call summary, settings, account, and billing screens
 - Provides Safe, Risky, and Scam presentation states
@@ -83,7 +83,7 @@ The debug APK is generated under `app/build/outputs/apk/debug/`.
 
 On first launch, complete the setup checklist:
 
-1. Grant microphone, contacts, phone state, call log, and phone-call permissions.
+1. Grant microphone, phone state, and notification permissions.
 2. Allow GuardVoice to display over other apps.
 3. Set GuardVoice as the device's Caller ID and spam app when Android prompts you.
 
@@ -121,8 +121,7 @@ app/src/main/
 
 ## Planned Work
 
-- Connect unknown-call broadcasts to the consent popup
-- Capture audio only after explicit per-call consent
+- Stream microphone chunks into the AI analysis pipeline
 - Add speech-to-text processing
 - Analyze transcripts for scam patterns
 - Update live risk predictions during calls
@@ -133,7 +132,7 @@ app/src/main/
 
 GuardVoice is designed around explicit consent:
 
-- Saved contacts are ignored by the screening decision.
+- Incoming calls are allowed normally unless the user explicitly starts tracking.
 - Unknown calls are allowed rather than silently blocked.
 - Audio access is intended to start only after the user approves tracking for that call.
 - Future transcript and call-history storage should remain transparent and user-controlled.

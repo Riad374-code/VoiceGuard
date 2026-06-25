@@ -6,37 +6,27 @@ import org.junit.Test
 
 class CallScreeningDecisionTest {
     @Test
-    fun `reports an incoming unsaved number`() {
+    fun `reports an incoming number`() {
         assertTrue(
-            shouldReportUnsavedIncomingCall(
+            shouldReportIncomingCall(
                 isIncoming = true,
-                phoneNumber = "+15551234567",
-                isSavedContact = false
+                phoneNumber = "+15551234567"
             )
         )
     }
 
     @Test
-    fun `ignores saved outgoing and missing numbers`() {
+    fun `ignores outgoing and missing numbers`() {
         assertFalse(
-            shouldReportUnsavedIncomingCall(
-                isIncoming = true,
-                phoneNumber = "+15551234567",
-                isSavedContact = true
-            )
-        )
-        assertFalse(
-            shouldReportUnsavedIncomingCall(
+            shouldReportIncomingCall(
                 isIncoming = false,
-                phoneNumber = "+15551234567",
-                isSavedContact = false
+                phoneNumber = "+15551234567"
             )
         )
         assertFalse(
-            shouldReportUnsavedIncomingCall(
+            shouldReportIncomingCall(
                 isIncoming = true,
-                phoneNumber = null,
-                isSavedContact = false
+                phoneNumber = null
             )
         )
     }

@@ -48,7 +48,7 @@ fun SetupScreen(
                     color = GuardColors.Ink
                 )
                 Text(
-                    text = "GuardVoice stays idle for saved contacts. When an unknown caller rings, it asks for consent before any voice tracking starts.",
+                    text = "When a phone call rings, GuardVoice asks for consent before any voice tracking starts.",
                     style = MaterialTheme.typography.bodyLarge,
                     color = GuardColors.InkMuted
                 )
