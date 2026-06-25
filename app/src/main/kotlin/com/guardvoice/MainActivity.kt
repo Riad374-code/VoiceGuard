@@ -2,13 +2,16 @@ package com.guardvoice
 
 import android.Manifest
 import android.app.role.RoleManager
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.util.Log
 import androidx.activity.ComponentActivity
+import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -17,6 +20,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
+import com.guardvoice.compat.AndroidDeviceCompatibility
 import com.guardvoice.ui.GuardVoiceApp
 import com.guardvoice.ui.model.PermissionAction
 import com.guardvoice.ui.model.PermissionItem
@@ -52,10 +56,36 @@ class MainActivity : ComponentActivity() {
                                 runtimePermissionLauncher.launch(runtimePermissions())
                             }
                             PermissionAction.OpenOverlaySettings -> {
-                                settingsLauncher.launch(overlaySettingsIntent())
+                                launchSettingsIntent(
+                                    settingsLauncher,
+                                    overlaySettingsIntent(),
+                                    appDetailsIntent()
+                                )
                             }
                             PermissionAction.OpenCallerIdSettings -> {
-                                settingsLauncher.launch(callerIdSettingsIntent())
+                                launchSettingsIntent(
+                                    settingsLauncher,
+                                    callerIdSettingsIntent(),
+                                    appDetailsIntent()
+                                )
+                            }
+                            PermissionAction.OpenBatterySettings -> {
+                                launchSettingsIntent(
+                                    settingsLauncher,
+                                    AndroidDeviceCompatibility.batteryOptimizationIntent(
+                                        this@MainActivity
+                                    ),
+                                    batteryOptimizationListIntent()
+                                )
+                            }
+                            PermissionAction.OpenManufacturerSettings -> {
+                                launchSettingsIntent(
+                                    settingsLauncher,
+                                    AndroidDeviceCompatibility.manufacturerSettingsIntent(
+                                        this@MainActivity
+                                    ),
+                                    appDetailsIntent()
+                                )
                             }
                         }
                     }
@@ -76,6 +106,8 @@ class MainActivity : ComponentActivity() {
         }
         val hasOverlayPermission = Settings.canDrawOverlays(this)
         val hasCallerIdRole = hasCallScreeningRole()
+        val hasBatteryExemption = AndroidDeviceCompatibility.isIgnoringBatteryOptimizations(this)
+        val deviceProfile = AndroidDeviceCompatibility.profile()
         val runtimeAction = if (hasRuntimePermissions) null else PermissionAction.RequestRuntimePermissions
         val runtimeActionLabel = if (hasRuntimePermissions) null else "Grant app permissions"
 
@@ -129,6 +161,20 @@ class MainActivity : ComponentActivity() {
                 state = permissionState(hasCallerIdRole),
                 action = if (hasCallerIdRole) null else PermissionAction.OpenCallerIdSettings,
                 actionLabel = if (hasCallerIdRole) null else "Set as Caller ID app"
+            ),
+            PermissionItem(
+                title = "Battery background access",
+                description = "Keeps call monitoring alive on Android versions and ROMs with strict battery control.",
+                state = permissionState(hasBatteryExemption),
+                action = if (hasBatteryExemption) null else PermissionAction.OpenBatterySettings,
+                actionLabel = if (hasBatteryExemption) null else "Allow unrestricted battery"
+            ),
+            PermissionItem(
+                title = deviceProfile.setupTitle,
+                description = deviceProfile.setupDescription,
+                state = PermissionState.Waiting,
+                action = PermissionAction.OpenManufacturerSettings,
+                actionLabel = deviceProfile.actionLabel
             )
         )
 
@@ -175,6 +221,48 @@ class MainActivity : ComponentActivity() {
         } else {
             Intent(Settings.ACTION_SETTINGS)
         }
+    }
+
+    private fun batteryOptimizationListIntent(): Intent =
+        Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+
+    private fun appDetailsIntent(): Intent =
+        AndroidDeviceCompatibility.appDetailsIntent(this)
+
+    private fun launchSettingsIntent(
+        launcher: ActivityResultLauncher<Intent>,
+        intent: Intent,
+        fallbackIntent: Intent
+    ) {
+        try {
+            launcher.launch(intent)
+        } catch (exception: ActivityNotFoundException) {
+            Log.w(TAG, "Settings screen was unavailable; opening fallback.", exception)
+            launchFallbackSettings(launcher, fallbackIntent)
+        } catch (exception: RuntimeException) {
+            Log.w(TAG, "Settings screen launch failed; opening fallback.", exception)
+            launchFallbackSettings(launcher, fallbackIntent)
+        }
+    }
+
+    private fun launchFallbackSettings(
+        launcher: ActivityResultLauncher<Intent>,
+        fallbackIntent: Intent
+    ) {
+        try {
+            launcher.launch(fallbackIntent)
+        } catch (exception: RuntimeException) {
+            Log.w(TAG, "Fallback settings screen launch failed.", exception)
+            try {
+                startActivity(Intent(Settings.ACTION_SETTINGS))
+            } catch (settingsException: RuntimeException) {
+                Log.e(TAG, "Android settings could not be opened.", settingsException)
+            }
+        }
+    }
+
+    private companion object {
+        private const val TAG = "MainActivity"
     }
 }
 

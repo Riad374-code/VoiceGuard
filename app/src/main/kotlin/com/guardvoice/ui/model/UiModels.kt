@@ -22,7 +22,9 @@ enum class PermissionState {
 enum class PermissionAction {
     RequestRuntimePermissions,
     OpenOverlaySettings,
-    OpenCallerIdSettings
+    OpenCallerIdSettings,
+    OpenBatterySettings,
+    OpenManufacturerSettings
 }
 
 enum class RiskLevel(

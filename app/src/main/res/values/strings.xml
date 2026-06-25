@@ -1,9 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">GuardVoice</string>
-    <string name="overlay_allow">Allow tracking</string>
-    <string name="overlay_decline">Not now</string>
-    <string name="overlay_body">GuardVoice can listen only after you allow this call. Speaker mode may be used so both sides are audible.</string>
+    <string name="overlay_allow">Allow</string>
+    <string name="overlay_decline">Skip</string>
+    <string name="overlay_badge">GuardVoice check</string>
+    <string name="overlay_consent_title">Allow voice tracking for this call?</string>
+    <string name="overlay_body">Tracking starts only if you allow it. The app may switch to speaker so both sides can be analyzed.</string>
     <string name="overlay_title">Incoming caller</string>
     <string name="overlay_waiting_for_consent">Waiting for consent</string>
     <string name="overlay_starting_capture">Turning on speaker and microphone...</string>
@@ -16,4 +18,6 @@
     <string name="overlay_notification_text">Waiting for your per-call choice.</string>
     <string name="capture_notification_title">GuardVoice is listening</string>
     <string name="capture_notification_text">Speaker mode and microphone are active for %1$s.</string>
+    <string name="popup_fallback_notification_channel">GuardVoice setup alerts</string>
+    <string name="popup_fallback_notification_title">GuardVoice popup blocked</string>
 </resources>

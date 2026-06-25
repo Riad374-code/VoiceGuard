@@ -68,10 +68,19 @@ class CallOverlayService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_SHOW) {
+            activeSessionId = intent.getStringExtra(EXTRA_SESSION_ID).orEmpty()
+        }
+
         try {
             startForegroundOverlay()
         } catch (exception: RuntimeException) {
             Log.e(TAG, "Could not start call overlay foreground service.", exception)
+            if (activeSessionId.isNotBlank()) {
+                val reason = "Android blocked the call popup foreground service."
+                CallSessionRepository.markFailed(this, activeSessionId, reason)
+                CallFallbackNotifier.showPopupUnavailable(this, reason)
+            }
             stopSelf()
             return START_NOT_STICKY
         }
@@ -79,7 +88,7 @@ class CallOverlayService : Service() {
         if (intent?.action == ACTION_SHOW) {
             showOverlay(
                 phoneNumber = intent.getStringExtra(EXTRA_PHONE_NUMBER).orEmpty(),
-                sessionId = intent.getStringExtra(EXTRA_SESSION_ID).orEmpty()
+                sessionId = activeSessionId
             )
         }
         return START_NOT_STICKY
@@ -107,14 +116,18 @@ class CallOverlayService : Service() {
                 activeSessionId,
                 "Display-over-apps permission is missing, so the call popup could not be shown."
             )
+            CallFallbackNotifier.showPopupUnavailable(
+                this,
+                "Display-over-apps permission is missing, so the call popup could not be shown."
+            )
             stopSelf()
             return
         }
 
         removeOverlay()
         val view = LayoutInflater.from(this).inflate(R.layout.overlay_call, null)
-        val displayNumber = phoneNumber.ifBlank { getString(R.string.overlay_title) }
-        view.findViewById<TextView>(R.id.tv_number).text = displayNumber
+        view.findViewById<TextView>(R.id.tv_number).text =
+            getString(R.string.overlay_consent_title)
         view.findViewById<TextView>(R.id.tv_verdict).text =
             getString(R.string.overlay_waiting_for_consent)
         view.findViewById<Button>(R.id.btn_yes).setOnClickListener {
@@ -150,6 +163,10 @@ class CallOverlayService : Service() {
                 this,
                 activeSessionId,
                 "The call popup could not be attached to the screen."
+            )
+            CallFallbackNotifier.showPopupUnavailable(
+                this,
+                "The device blocked the call popup window."
             )
             stopSelf()
         }
@@ -222,14 +239,6 @@ class CallOverlayService : Service() {
         val transcriptView = view.findViewById<TextView>(R.id.tv_transcript)
         val reasonsView = view.findViewById<TextView>(R.id.tv_verdict_details)
 
-        val (displayText, color) = when (riskLevel) {
-            "Safe" -> Pair("✓ Safe call", 0xFF2E7D32.toInt())
-            "Suspicious" -> Pair("⚠ Suspicious", 0xFFF57F17.toInt())
-            "Scam" -> Pair("✗ Scam detected!", 0xFFC62828.toInt())
-            else -> Pair("Analyzing...", 0xFF1565C0.toInt())
-        }
-        verdictView.text = displayText
-        verdictView.setTextColor(color)
         val normalizedVerdictDisplay = displayForRiskLevel(riskLevel)
         verdictView.text = normalizedVerdictDisplay.first
         verdictView.setTextColor(normalizedVerdictDisplay.second)
@@ -240,7 +249,6 @@ class CallOverlayService : Service() {
         }
 
         if (reasons.isNotEmpty()) {
-            reasonsView.text = reasons.joinToString(" • ")
             reasonsView.visibility = View.VISIBLE
             reasonsView.text = reasons.joinToString(" / ")
         }
@@ -396,6 +404,10 @@ class CallOverlayService : Service() {
                 .putExtra(EXTRA_PHONE_NUMBER, phoneNumber)
                 .putExtra(EXTRA_SESSION_ID, sessionId)
             ContextCompat.startForegroundService(context, intent)
+        }
+
+        fun stop(context: Context) {
+            context.stopService(Intent(context, CallOverlayService::class.java))
         }
     }
 }

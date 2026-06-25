@@ -69,6 +69,23 @@ object CallSessionRepository {
         }
     }
 
+    fun updatePhoneNumberIfBlank(context: Context, sessionId: String, phoneNumber: String) {
+        val normalizedPhoneNumber = phoneNumber.trim()
+        if (normalizedPhoneNumber.isBlank()) {
+            return
+        }
+        updateSession(context, sessionId) { session, nowMillis ->
+            if (session.phoneNumber.isNotBlank()) {
+                session
+            } else {
+                session.copy(
+                    phoneNumber = normalizedPhoneNumber,
+                    updatedAtMillis = nowMillis
+                )
+            }
+        }
+    }
+
     fun recordAudioProgress(
         context: Context,
         sessionId: String,
