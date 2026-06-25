@@ -16,6 +16,15 @@ class ScamAnalyzerTest {
     }
 
     @Test
+    fun `keeps tiny transcript fragments pending instead of safe`() {
+        val result = ScamAnalyzer.analyze("Thank you.")
+
+        assertEquals(CallVerdict.Pending, result.verdict)
+        assertEquals(0, result.riskScore)
+        assertTrue(result.reasons.isEmpty())
+    }
+
+    @Test
     fun `marks high pressure credential request as scam`() {
         val result = ScamAnalyzer.analyze(
             "This is urgent. Verify your account and give me the one time password right now."

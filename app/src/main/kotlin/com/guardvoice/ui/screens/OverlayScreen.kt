@@ -8,7 +8,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -136,7 +136,8 @@ private fun ConsentPopup(
 ) {
     Column(
         modifier = Modifier
-            .width(GuardSize.OverlayWidth)
+            .fillMaxWidth()
+            .widthIn(max = GuardSize.OverlayWidth)
             .clip(RoundedCornerShape(GuardRadius.Large))
             .background(GuardColors.Surface)
             .border(1.dp, GuardColors.Line, RoundedCornerShape(GuardRadius.Large))
@@ -155,14 +156,14 @@ private fun ConsentPopup(
             style = MaterialTheme.typography.bodyMedium,
             color = GuardColors.InkMuted
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(GuardSpace.Small)) {
+        Column(verticalArrangement = Arrangement.spacedBy(GuardSpace.Small)) {
             PrimaryAction(
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.fillMaxWidth(),
                 text = "Allow",
                 onClick = onAllowTracking
             )
             SecondaryAction(
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.fillMaxWidth(),
                 text = "Skip",
                 onClick = onDecline
             )
@@ -175,7 +176,8 @@ private fun LiveVerdictPopup(onFinish: () -> Unit) {
     val analysis = demoAnalysis
     Column(
         modifier = Modifier
-            .width(GuardSize.OverlayWidth)
+            .fillMaxWidth()
+            .widthIn(max = GuardSize.OverlayWidth)
             .clip(RoundedCornerShape(GuardRadius.Large))
             .background(GuardColors.Surface)
             .border(1.dp, GuardColors.Line, RoundedCornerShape(GuardRadius.Large))

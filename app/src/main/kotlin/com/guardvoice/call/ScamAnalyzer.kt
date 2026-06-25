@@ -9,6 +9,8 @@ data class AnalysisResult(
 )
 
 object ScamAnalyzer {
+    private const val MIN_WORDS_FOR_SAFE_VERDICT = 6
+
     private data class ScamPattern(
         val keywords: List<String>,
         val reason: String,
@@ -125,7 +127,7 @@ object ScamAnalyzer {
             clampedScore >= 60 -> CallVerdict.Scam
             clampedScore >= 25 -> CallVerdict.Suspicious
             clampedScore > 0 -> CallVerdict.Suspicious
-            transcript.isNotBlank() -> CallVerdict.Safe
+            hasEnoughSpeechForSafeVerdict(transcript) -> CallVerdict.Safe
             else -> CallVerdict.Pending
         }
 
@@ -135,4 +137,9 @@ object ScamAnalyzer {
             reasons = matchedReasons
         )
     }
+
+    private fun hasEnoughSpeechForSafeVerdict(transcript: String): Boolean =
+        transcript.trim()
+            .split(Regex("\\s+"))
+            .count { word -> word.isNotBlank() } >= MIN_WORDS_FOR_SAFE_VERDICT
 }
