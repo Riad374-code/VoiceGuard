@@ -53,10 +53,17 @@ class CallOverlayService : Service() {
             updateVerdictDisplay(riskLevel, riskScore, transcript, reasons)
         }
     }
+    private val audioHealthReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            val message = intent.getStringExtra(AudioCaptureService.EXTRA_HEALTH_ALERT_MESSAGE).orEmpty()
+            updateAudioHealthWarning(message)
+        }
+    }
     private var overlayView: View? = null
     private var isCaptureRequested = false
     private var isCaptureStateReceiverRegistered = false
     private var isVerdictReceiverRegistered = false
+    private var isAudioHealthReceiverRegistered = false
     private var activeSessionId = ""
 
     override fun onCreate() {
@@ -64,6 +71,7 @@ class CallOverlayService : Service() {
         ensureNotificationChannel()
         registerCaptureStateReceiver()
         registerVerdictReceiver()
+        registerAudioHealthReceiver()
         callStateMonitor.start()
     }
 
@@ -101,6 +109,7 @@ class CallOverlayService : Service() {
         removeOverlay()
         unregisterCaptureStateReceiver()
         unregisterVerdictReceiver()
+        unregisterAudioHealthReceiver()
         callStateMonitor.stop()
         stopForeground(STOP_FOREGROUND_REMOVE)
         super.onDestroy()
@@ -386,6 +395,41 @@ class CallOverlayService : Service() {
         } finally {
             isVerdictReceiverRegistered = false
         }
+    }
+
+    private fun registerAudioHealthReceiver() {
+        val filter = IntentFilter(AudioCaptureService.ACTION_AUDIO_HEALTH_ALERT)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(audioHealthReceiver, filter, RECEIVER_NOT_EXPORTED)
+            isAudioHealthReceiverRegistered = true
+            return
+        }
+        @Suppress("DEPRECATION")
+        registerReceiver(audioHealthReceiver, filter)
+        isAudioHealthReceiverRegistered = true
+    }
+
+    private fun unregisterAudioHealthReceiver() {
+        if (!isAudioHealthReceiverRegistered) {
+            return
+        }
+        try {
+            unregisterReceiver(audioHealthReceiver)
+        } catch (exception: RuntimeException) {
+            Log.w(TAG, "Audio health receiver was already unregistered.", exception)
+        } finally {
+            isAudioHealthReceiverRegistered = false
+        }
+    }
+
+    private fun updateAudioHealthWarning(message: String) {
+        val view = overlayView ?: return
+        val verdictView = view.findViewById<TextView>(R.id.tv_verdict)
+        val detailsView = view.findViewById<TextView>(R.id.tv_verdict_details)
+        verdictView.text = getString(R.string.overlay_audio_warning)
+        verdictView.setTextColor(0xFFE65100.toInt())
+        detailsView.visibility = View.VISIBLE
+        detailsView.text = message
     }
 
     companion object {

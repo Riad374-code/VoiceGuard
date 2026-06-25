@@ -102,6 +102,35 @@ object ScamAnalyzer {
             keywords = listOf("you owe", "pay immediately", "settle your debt", "collections", "overdue payment"),
             reason = "Fake debt collection threat",
             weight = 25
+        ),
+        ScamPattern(
+            keywords = listOf(
+                "bank transfer", "online banking", "bank login", "internet banking",
+                "mobile banking", "card blocked", "suspicious activity", "bank representative",
+                "security department", "update your bank", "change your password bank"
+            ),
+            reason = "Banking scam indicators",
+            weight = 30
+        ),
+        ScamPattern(
+            keywords = listOf(
+                "banka hesabınız", "kredi kartınız", "banka kartınız",
+                "hesabınız bloke", "bloke oldu", "şüpheli işlem", "banka güvenlik",
+                "banka temsilcisi", "şifreniz", "internet bankacılığı",
+                "mobil bankacılık", "para transferi", "havale", "eft"
+            ),
+            reason = "Bankacılık dolandırıcılığı göstergeleri",
+            weight = 30
+        ),
+        ScamPattern(
+            keywords = listOf(
+                "bank hesabınız", "kredit kartınız", "bank kartınız",
+                "hesabınız blok", "şübhəli əməliyyat", "bank təhlükəsizlik",
+                "bank nümayəndəsi", "şifrəniz", "internet bankçılıq",
+                "mobil bankçılıq", "pul köçürməsi", "kart məlumatları"
+            ),
+            reason = "Bank fırıldaqçılığı göstəriciləri",
+            weight = 30
         )
     )
 

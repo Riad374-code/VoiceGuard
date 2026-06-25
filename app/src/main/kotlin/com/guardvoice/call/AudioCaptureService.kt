@@ -41,6 +41,8 @@ class AudioCaptureService : Service() {
     private val progressLock = Any()
     private var pendingAudioBytes = 0L
     private var pendingAudioChunks = 0
+    private var lowVolumeChunkCount = 0
+    private var didSendLowVolumeAlert = false
 
     @Volatile
     private var isCaptureRunning = false
@@ -170,6 +172,7 @@ class AudioCaptureService : Service() {
                 if (bytesRead > 0) {
                     CallAudioStream.accept(activeSessionId, buffer.copyOf(bytesRead))
                     recordAudioProgress(bytesRead)
+                    evaluateVolumeLevel(buffer, bytesRead)
                 } else if (bytesRead < 0) {
                     Log.w(TAG, "AudioRecord read failed with code $bytesRead.")
                     didFail = true
@@ -183,6 +186,34 @@ class AudioCaptureService : Service() {
             if (didFail && isCaptureRunning) {
                 cleanupFailedCapture(recorder)
             }
+        }
+    }
+
+    private fun evaluateVolumeLevel(buffer: ByteArray, bytesRead: Int) {
+        if (didSendLowVolumeAlert) return
+        var sumSq = 0L
+        for (i in 0 until bytesRead step 2) {
+            val sample = ((buffer[i + 1].toInt() and 0xFF) shl 8) or (buffer[i].toInt() and 0xFF)
+            val normalized = sample.toShort().toInt()
+            sumSq += normalized * normalized
+        }
+        val rms = kotlin.math.sqrt(sumSq.toDouble() / (bytesRead / 2))
+        if (rms < LOW_VOLUME_RMS_THRESHOLD) {
+            lowVolumeChunkCount++
+            if (lowVolumeChunkCount >= LOW_VOLUME_CHUNK_THRESHOLD && !didSendLowVolumeAlert) {
+                didSendLowVolumeAlert = true
+                val ctx = applicationContext
+                val msg = ctx.getString(R.string.overlay_low_volume)
+                ctx.sendBroadcast(
+                    Intent(ACTION_AUDIO_HEALTH_ALERT)
+                        .setPackage(ctx.packageName)
+                        .putExtra(EXTRA_HEALTH_ALERT_TYPE, HEALTH_ALERT_LOW_VOLUME)
+                        .putExtra(EXTRA_HEALTH_ALERT_MESSAGE, msg)
+                )
+                CallFallbackNotifier.showAudioHealthAlert(ctx, msg)
+            }
+        } else {
+            lowVolumeChunkCount = 0
         }
     }
 
@@ -385,6 +416,14 @@ class AudioCaptureService : Service() {
         const val EXTRA_RISK_SCORE = "extra_risk_score"
         const val EXTRA_TRANSCRIPT = "extra_transcript"
         const val EXTRA_REASONS = "extra_reasons"
+        const val ACTION_AUDIO_HEALTH_ALERT =
+            "com.guardvoice.action.AUDIO_HEALTH_ALERT"
+        const val EXTRA_HEALTH_ALERT_TYPE = "extra_health_alert_type"
+        const val EXTRA_HEALTH_ALERT_MESSAGE = "extra_health_alert_message"
+        const val HEALTH_ALERT_NO_VOICE = "no_voice"
+        const val HEALTH_ALERT_LOW_VOLUME = "low_volume"
+        private const val LOW_VOLUME_RMS_THRESHOLD = 30.0
+        private const val LOW_VOLUME_CHUNK_THRESHOLD = 10
         private const val ACTION_START = "com.guardvoice.action.START_CAPTURE"
         private const val ACTION_STOP = "com.guardvoice.action.STOP_CAPTURE"
         private const val EXTRA_PHONE_NUMBER = "extra_phone_number"

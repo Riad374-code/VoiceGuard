@@ -20,4 +20,9 @@
     <string name="capture_notification_text">Speaker mode and microphone are active for %1$s.</string>
     <string name="popup_fallback_notification_channel">GuardVoice setup alerts</string>
     <string name="popup_fallback_notification_title">GuardVoice popup blocked</string>
+    <string name="overlay_audio_warning">Audio issue detected</string>
+    <string name="overlay_no_voice">No voice detected from microphone. Speaker may be muted or microphone unavailable.</string>
+    <string name="overlay_low_volume">Audio level too low. Move closer to microphone or check if it is blocked.</string>
+    <string name="audio_health_notification_channel">GuardVoice audio alerts</string>
+    <string name="audio_health_notification_title">GuardVoice audio issue</string>
 </resources>

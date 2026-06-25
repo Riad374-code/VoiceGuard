@@ -20,14 +20,26 @@ internal object CallFallbackNotifier {
         if (!canPostNotifications(appContext)) {
             return
         }
-        ensureNotificationChannel(appContext)
+        ensureNotificationChannel(appContext, NOTIFICATION_CHANNEL_ID, context.getString(R.string.popup_fallback_notification_channel), NotificationManager.IMPORTANCE_HIGH)
         appContext.getSystemService(NotificationManager::class.java).notify(
             FALLBACK_NOTIFICATION_ID,
-            buildNotification(appContext, reason)
+            buildNotification(appContext, NOTIFICATION_CHANNEL_ID, context.getString(R.string.popup_fallback_notification_title), reason)
         )
     }
 
-    private fun buildNotification(context: Context, reason: String): Notification {
+    fun showAudioHealthAlert(context: Context, message: String) {
+        val appContext = context.applicationContext
+        if (!canPostNotifications(appContext)) {
+            return
+        }
+        ensureNotificationChannel(appContext, HEALTH_NOTIFICATION_CHANNEL_ID, context.getString(R.string.audio_health_notification_channel), NotificationManager.IMPORTANCE_HIGH)
+        appContext.getSystemService(NotificationManager::class.java).notify(
+            HEALTH_ALERT_NOTIFICATION_ID,
+            buildNotification(appContext, HEALTH_NOTIFICATION_CHANNEL_ID, context.getString(R.string.audio_health_notification_title), message)
+        )
+    }
+
+    private fun buildNotification(context: Context, channelId: String, title: String, text: String): Notification {
         val launchIntent = Intent(context, MainActivity::class.java)
         val pendingIntent = PendingIntent.getActivity(
             context,
@@ -35,21 +47,21 @@ internal object CallFallbackNotifier {
             launchIntent,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
-        return NotificationCompat.Builder(context, NOTIFICATION_CHANNEL_ID)
+        return NotificationCompat.Builder(context, channelId)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle(context.getString(R.string.popup_fallback_notification_title))
-            .setContentText(reason)
+            .setContentTitle(title)
+            .setContentText(text)
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .build()
     }
 
-    private fun ensureNotificationChannel(context: Context) {
+    private fun ensureNotificationChannel(context: Context, channelId: String, channelName: String, importance: Int) {
         val channel = NotificationChannel(
-            NOTIFICATION_CHANNEL_ID,
-            context.getString(R.string.popup_fallback_notification_channel),
-            NotificationManager.IMPORTANCE_HIGH
+            channelId,
+            channelName,
+            importance
         )
         context.getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
     }
@@ -62,6 +74,8 @@ internal object CallFallbackNotifier {
             ) == PackageManager.PERMISSION_GRANTED
 
     private const val NOTIFICATION_CHANNEL_ID = "guardvoice_call_fallback"
+    private const val HEALTH_NOTIFICATION_CHANNEL_ID = "guardvoice_audio_health"
     private const val FALLBACK_NOTIFICATION_ID = 2003
+    private const val HEALTH_ALERT_NOTIFICATION_ID = 2004
     private const val NOTIFICATION_REQUEST_CODE = 45
 }

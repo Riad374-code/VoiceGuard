@@ -6,12 +6,14 @@ import android.util.Log
 import com.guardvoice.data.CallSessionRepository
 import com.guardvoice.data.CallVerdict
 import com.guardvoice.db.GuardVoiceRepository
+import com.guardvoice.R
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
 internal object CallAudioStream {
     private const val BUFFER_THRESHOLD = 96_000
     private const val TAG = "CallAudioStream"
+    private const val MAX_EMPTY_CONSECUTIVE = 3
 
     private val lock = Any()
     private val audioBuffer = mutableListOf<ByteArray>()
@@ -20,6 +22,7 @@ internal object CallAudioStream {
     private var appContext: Context? = null
     private val executor = Executors.newSingleThreadExecutor()
     private val isProcessing = AtomicBoolean(false)
+    private var consecutiveEmptyCount = 0
 
     fun init(context: Context, sessionId: String) {
         synchronized(lock) {
@@ -53,6 +56,7 @@ internal object CallAudioStream {
             activeSessionId = ""
             audioBuffer.clear()
             bufferSize = 0
+            consecutiveEmptyCount = 0
         }
     }
 
@@ -76,7 +80,16 @@ internal object CallAudioStream {
             if (sid.isBlank()) return
 
             val transcription = GroqWhisperClient.transcribe(pcmData)
-            if (transcription.isNullOrBlank()) return
+            if (transcription.isNullOrBlank()) {
+                consecutiveEmptyCount++
+                if (consecutiveEmptyCount >= MAX_EMPTY_CONSECUTIVE) {
+                    sendNoVoiceAlert(context)
+                    consecutiveEmptyCount = 0
+                }
+                return
+            }
+
+            consecutiveEmptyCount = 0
 
             val result = ScamAnalyzer.analyze(transcription)
             val summary = when (result.verdict) {
@@ -148,5 +161,16 @@ internal object CallAudioStream {
                 .putExtra(AudioCaptureService.EXTRA_TRANSCRIPT, transcript)
                 .putExtra(AudioCaptureService.EXTRA_REASONS, reasons.toTypedArray())
         )
+    }
+
+    private fun sendNoVoiceAlert(context: Context) {
+        val msg = context.getString(R.string.overlay_no_voice)
+        context.sendBroadcast(
+            Intent(AudioCaptureService.ACTION_AUDIO_HEALTH_ALERT)
+                .setPackage(context.packageName)
+                .putExtra(AudioCaptureService.EXTRA_HEALTH_ALERT_TYPE, AudioCaptureService.HEALTH_ALERT_NO_VOICE)
+                .putExtra(AudioCaptureService.EXTRA_HEALTH_ALERT_MESSAGE, msg)
+        )
+        CallFallbackNotifier.showAudioHealthAlert(context, msg)
     }
 }
