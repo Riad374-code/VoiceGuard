@@ -6,28 +6,16 @@ import org.junit.Test
 
 class CallScreeningDecisionTest {
     @Test
-    fun `reports an incoming number`() {
+    fun `reports incoming calls`() {
         assertTrue(
-            shouldReportIncomingCall(
-                isIncoming = true,
-                phoneNumber = "+15551234567"
-            )
+            shouldReportIncomingCall(isIncoming = true)
         )
     }
 
     @Test
-    fun `ignores outgoing and missing numbers`() {
+    fun `ignores outgoing calls`() {
         assertFalse(
-            shouldReportIncomingCall(
-                isIncoming = false,
-                phoneNumber = "+15551234567"
-            )
-        )
-        assertFalse(
-            shouldReportIncomingCall(
-                isIncoming = true,
-                phoneNumber = null
-            )
+            shouldReportIncomingCall(isIncoming = false)
         )
     }
 }

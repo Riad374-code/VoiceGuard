@@ -72,23 +72,39 @@ class AudioCaptureService : Service() {
             return
         }
 
-        synchronized(captureLock) {
-            if (isCaptureRunning) {
-                return
+        try {
+            synchronized(captureLock) {
+                if (isCaptureRunning) {
+                    return
+                }
+                startForegroundCapture(phoneNumber)
+                activateSpeakerMode()
+                val recorder = buildRecorder() ?: run {
+                    restoreAudioMode()
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                    publishState(CaptureState.Failed)
+                    stopSelf()
+                    return
+                }
+                activeRecorder = recorder
+                isCaptureRunning = true
+                captureThread = Thread({ captureLoop(recorder) }, "GuardVoiceAudioCapture").apply {
+                    start()
+                }
+                publishState(CaptureState.Listening)
             }
-            startForegroundCapture(phoneNumber)
-            activateSpeakerMode()
-            val recorder = buildRecorder() ?: run {
-                publishState(CaptureState.Failed)
-                stopSelf()
-                return
+        } catch (exception: RuntimeException) {
+            Log.e(TAG, "Audio capture startup failed.", exception)
+            synchronized(captureLock) {
+                isCaptureRunning = false
+                activeRecorder?.releaseSafely()
+                activeRecorder = null
+                captureThread = null
             }
-            activeRecorder = recorder
-            isCaptureRunning = true
-            captureThread = Thread({ captureLoop(recorder) }, "GuardVoiceAudioCapture").apply {
-                start()
-            }
-            publishState(CaptureState.Listening)
+            restoreAudioMode()
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            publishState(CaptureState.Failed)
+            stopSelf()
         }
     }
 
@@ -202,13 +218,17 @@ class AudioCaptureService : Service() {
     }
 
     private fun restoreAudioMode() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            audioManager.clearCommunicationDevice()
-        }
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                audioManager.clearCommunicationDevice()
+            }
 
-        @Suppress("DEPRECATION")
-        audioManager.isSpeakerphoneOn = wasSpeakerphoneOn
-        audioManager.mode = previousAudioMode
+            @Suppress("DEPRECATION")
+            audioManager.isSpeakerphoneOn = wasSpeakerphoneOn
+            audioManager.mode = previousAudioMode
+        } catch (exception: RuntimeException) {
+            Log.w(TAG, "Audio mode restore failed.", exception)
+        }
     }
 
     private fun startForegroundCapture(phoneNumber: String) {

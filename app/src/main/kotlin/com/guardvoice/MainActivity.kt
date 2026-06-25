@@ -93,6 +93,13 @@ class MainActivity : ComponentActivity() {
                 isReady = hasPhonePermissions(),
                 action = runtimeAction,
                 actionLabel = runtimeActionLabel
+            ),
+            runtimePermissionItem(
+                title = "Contacts",
+                description = "Allows Android to pass saved-contact calls to screening.",
+                isReady = hasPermission(Manifest.permission.READ_CONTACTS),
+                action = runtimeAction,
+                actionLabel = runtimeActionLabel
             )
         )
         val notificationItems = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -178,6 +185,7 @@ private fun runtimePermissions(): Array<String> =
     buildList {
         add(Manifest.permission.RECORD_AUDIO)
         add(Manifest.permission.READ_PHONE_STATE)
+        add(Manifest.permission.READ_CONTACTS)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             add(Manifest.permission.POST_NOTIFICATIONS)
         }

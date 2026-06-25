@@ -1,3 +1,5 @@
+@file:Suppress("DEPRECATION")
+
 package com.guardvoice.call
 
 import android.os.Build
@@ -25,21 +27,27 @@ internal class CallStateMonitor(
             }
         } catch (exception: SecurityException) {
             Log.w(TAG, "Phone state permission missing; call-end cleanup disabled.", exception)
+        } catch (exception: RuntimeException) {
+            Log.w(TAG, "Call state monitor could not start.", exception)
         }
     }
 
     fun stop() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            telephonyCallback?.let(telephonyManager::unregisterTelephonyCallback)
-            telephonyCallback = null
-            return
-        }
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                telephonyCallback?.let(telephonyManager::unregisterTelephonyCallback)
+                telephonyCallback = null
+                return
+            }
 
-        @Suppress("DEPRECATION")
-        phoneStateListener?.let {
-            telephonyManager.listen(it, PhoneStateListener.LISTEN_NONE)
+            @Suppress("DEPRECATION")
+            phoneStateListener?.let {
+                telephonyManager.listen(it, PhoneStateListener.LISTEN_NONE)
+            }
+            phoneStateListener = null
+        } catch (exception: RuntimeException) {
+            Log.w(TAG, "Call state monitor could not stop.", exception)
         }
-        phoneStateListener = null
     }
 
     private fun startTelephonyCallback() {
@@ -60,6 +68,7 @@ internal class CallStateMonitor(
     @Suppress("DEPRECATION")
     private fun startPhoneStateListener() {
         val listener = object : PhoneStateListener() {
+            @Suppress("OVERRIDE_DEPRECATION")
             override fun onCallStateChanged(state: Int, phoneNumber: String?) {
                 if (state == TelephonyManager.CALL_STATE_IDLE) {
                     onCallIdle()

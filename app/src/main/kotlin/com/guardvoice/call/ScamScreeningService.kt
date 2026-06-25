@@ -19,7 +19,7 @@ class ScamScreeningService : CallScreeningService() {
         val phoneNumber = callDetails.handle?.schemeSpecificPart
         val isIncoming = callDetails.callDirection == Call.Details.DIRECTION_INCOMING
 
-        if (shouldReportIncomingCall(isIncoming, phoneNumber)) {
+        if (shouldReportIncomingCall(isIncoming)) {
             CallOverlayService.show(this, phoneNumber.orEmpty())
         }
     }

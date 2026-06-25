@@ -14,6 +14,7 @@ import android.graphics.PixelFormat
 import android.os.Build
 import android.os.IBinder
 import android.provider.Settings
+import android.util.Log
 import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
@@ -42,6 +43,7 @@ class CallOverlayService : Service() {
     }
     private var overlayView: View? = null
     private var isCaptureRequested = false
+    private var isCaptureStateReceiverRegistered = false
 
     override fun onCreate() {
         super.onCreate()
@@ -51,7 +53,14 @@ class CallOverlayService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        startForegroundOverlay()
+        try {
+            startForegroundOverlay()
+        } catch (exception: RuntimeException) {
+            Log.e(TAG, "Could not start call overlay foreground service.", exception)
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
         if (intent?.action == ACTION_SHOW) {
             showOverlay(intent.getStringExtra(EXTRA_PHONE_NUMBER).orEmpty())
         }
@@ -60,7 +69,7 @@ class CallOverlayService : Service() {
 
     override fun onDestroy() {
         removeOverlay()
-        unregisterReceiver(captureStateReceiver)
+        unregisterCaptureStateReceiver()
         callStateMonitor.stop()
         stopForeground(STOP_FOREGROUND_REMOVE)
         super.onDestroy()
@@ -85,13 +94,18 @@ class CallOverlayService : Service() {
         }
         view.findViewById<Button>(R.id.btn_no).setOnClickListener {
             if (isCaptureRequested) {
-                AudioCaptureService.stop(this)
+                stopAudioCapture()
             }
             stopSelf()
         }
 
-        windowManager.addView(view, overlayParams())
-        overlayView = view
+        try {
+            windowManager.addView(view, overlayParams())
+            overlayView = view
+        } catch (exception: RuntimeException) {
+            Log.e(TAG, "Could not show call overlay.", exception)
+            stopSelf()
+        }
     }
 
     private fun startListening(phoneNumber: String, view: View) {
@@ -103,7 +117,12 @@ class CallOverlayService : Service() {
             isEnabled = false
         }
         view.findViewById<Button>(R.id.btn_no).text = getString(R.string.overlay_stop)
-        AudioCaptureService.start(this, phoneNumber)
+        try {
+            AudioCaptureService.start(this, phoneNumber)
+        } catch (exception: RuntimeException) {
+            Log.e(TAG, "Could not start audio capture service.", exception)
+            updateCaptureState(AudioCaptureService.CaptureState.Failed)
+        }
     }
 
     private fun updateCaptureState(state: AudioCaptureService.CaptureState?) {
@@ -130,8 +149,22 @@ class CallOverlayService : Service() {
         }
     }
 
+    private fun stopAudioCapture() {
+        try {
+            AudioCaptureService.stop(this)
+        } catch (exception: RuntimeException) {
+            Log.w(TAG, "Could not stop audio capture service.", exception)
+        }
+    }
+
     private fun removeOverlay() {
-        overlayView?.let(windowManager::removeView)
+        overlayView?.let { view ->
+            try {
+                windowManager.removeView(view)
+            } catch (exception: RuntimeException) {
+                Log.w(TAG, "Call overlay was already detached.", exception)
+            }
+        }
         overlayView = null
     }
 
@@ -196,13 +229,29 @@ class CallOverlayService : Service() {
         val filter = IntentFilter(AudioCaptureService.ACTION_CAPTURE_STATE_CHANGED)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             registerReceiver(captureStateReceiver, filter, RECEIVER_NOT_EXPORTED)
+            isCaptureStateReceiverRegistered = true
             return
         }
         @Suppress("DEPRECATION")
         registerReceiver(captureStateReceiver, filter)
+        isCaptureStateReceiverRegistered = true
+    }
+
+    private fun unregisterCaptureStateReceiver() {
+        if (!isCaptureStateReceiverRegistered) {
+            return
+        }
+        try {
+            unregisterReceiver(captureStateReceiver)
+        } catch (exception: RuntimeException) {
+            Log.w(TAG, "Capture state receiver was already unregistered.", exception)
+        } finally {
+            isCaptureStateReceiverRegistered = false
+        }
     }
 
     companion object {
+        private const val TAG = "CallOverlayService"
         private const val ACTION_SHOW = "com.guardvoice.action.SHOW_CALL_OVERLAY"
         private const val EXTRA_PHONE_NUMBER = "extra_phone_number"
         private const val NOTIFICATION_CHANNEL_ID = "guardvoice_call_monitoring"

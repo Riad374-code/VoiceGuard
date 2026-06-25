@@ -25,7 +25,7 @@ The long-term product goal is to transcribe approved calls, analyze conversation
 - Detects incoming phone calls through `CallScreeningService`
 - Always allows calls through while showing a consent popup
 - Starts speakerphone and microphone capture only after the user allows tracking
-- Requests runtime phone-state, notification, and microphone permissions
+- Requests runtime phone-state, contacts, notification, and microphone permissions
 - Guides users to grant overlay access and the Android Caller ID role
 - Includes setup, dashboard, call popup, call summary, settings, account, and billing screens
 - Provides Safe, Risky, and Scam presentation states
@@ -83,7 +83,7 @@ The debug APK is generated under `app/build/outputs/apk/debug/`.
 
 On first launch, complete the setup checklist:
 
-1. Grant microphone, phone state, and notification permissions.
+1. Grant microphone, phone state, contacts, and notification permissions.
 2. Allow GuardVoice to display over other apps.
 3. Set GuardVoice as the device's Caller ID and spam app when Android prompts you.
 
@@ -111,7 +111,6 @@ app/src/main/
 |-- kotlin/com/guardvoice/
 |   |-- account/     # Account models and validation
 |   |-- call/        # Incoming call screening
-|   |-- data/        # Contact lookup
 |   `-- ui/          # Compose app, screens, components, and theme
 `-- res/
     |-- drawable/    # Popup and launch assets
@@ -133,7 +132,7 @@ app/src/main/
 GuardVoice is designed around explicit consent:
 
 - Incoming calls are allowed normally unless the user explicitly starts tracking.
-- Unknown calls are allowed rather than silently blocked.
+- Every incoming call is allowed rather than silently blocked.
 - Audio access is intended to start only after the user approves tracking for that call.
 - Future transcript and call-history storage should remain transparent and user-controlled.
 
