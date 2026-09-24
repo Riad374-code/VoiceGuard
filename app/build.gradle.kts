@@ -46,6 +46,7 @@ android {
             "GROQ_WHISPER_MODEL",
             buildConfigString("GROQ_WHISPER_MODEL", "whisper-large-v3-turbo")
         )
+        buildConfigField("String", "BACKEND_WS_URL", buildConfigString("BACKEND_WS_URL", "ws://10.0.2.2:4000/ws/audio-stream"))
     }
 
     buildFeatures {
@@ -77,6 +78,9 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.core:core-ktx:1.17.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.10.0")
+
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 
     testImplementation("junit:junit:4.13.2")
     debugImplementation("androidx.compose.ui:ui-tooling")

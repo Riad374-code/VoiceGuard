@@ -23,6 +23,7 @@ import androidx.core.content.ContextCompat
 import com.guardvoice.MainActivity
 import com.guardvoice.R
 import com.guardvoice.data.CallSessionRepository
+import com.guardvoice.stream.GeminiLiveStreamClient
 
 class AudioCaptureService : Service() {
     private val audioManager by lazy { getSystemService(AudioManager::class.java) }
@@ -110,6 +111,8 @@ class AudioCaptureService : Service() {
                 activeRecorder = recorder
                 isCaptureRunning = true
                 CallAudioStream.init(this, activeSessionId)
+                // Start streaming to Gemini proxy — accumulative, per-second PCM
+                try { GeminiLiveStreamClient.start(this, activeSessionId) } catch (e: Exception) { Log.w(TAG, "Gemini stream start failed, will use fallback", e) }
                 captureThread = Thread({ captureLoop(recorder) }, "GuardVoiceAudioCapture").apply {
                     start()
                 }
@@ -156,6 +159,7 @@ class AudioCaptureService : Service() {
         flushAudioProgress()
         recorderToRelease?.releaseSafely()
         CallAudioStream.reset()
+        try { GeminiLiveStreamClient.stop() } catch (_: Exception) {}
         restoreAudioMode()
         CallSessionRepository.markCompleted(this, activeSessionId)
         publishState(CaptureState.Stopped)
@@ -170,7 +174,11 @@ class AudioCaptureService : Service() {
             while (isCaptureRunning) {
                 val bytesRead = recorder.read(buffer, 0, buffer.size)
                 if (bytesRead > 0) {
-                    CallAudioStream.accept(activeSessionId, buffer.copyOf(bytesRead))
+                    val chunk = buffer.copyOf(bytesRead)
+                    // Legacy batch pipeline (Groq + local analyzer) — keep as offline fallback
+                    CallAudioStream.accept(activeSessionId, chunk)
+                    // New streaming pipeline: per-second PCM to backend proxy (accumulative, never resend old)
+                    try { GeminiLiveStreamClient.sendPcmChunk(chunk) } catch (_: Exception) {}
                     recordAudioProgress(bytesRead)
                     evaluateVolumeLevel(buffer, bytesRead)
                 } else if (bytesRead < 0) {
@@ -415,7 +423,14 @@ class AudioCaptureService : Service() {
         const val EXTRA_RISK_LEVEL = "extra_risk_level"
         const val EXTRA_RISK_SCORE = "extra_risk_score"
         const val EXTRA_TRANSCRIPT = "extra_transcript"
+        const val EXTRA_TRANSCRIPT_DELTA = "extra_transcript_delta"
         const val EXTRA_REASONS = "extra_reasons"
+        const val EXTRA_KEYWORDS = "extra_keywords"
+        const val EXTRA_ELAPSED_SEC = "extra_elapsed_sec"
+        const val EXTRA_SESSION_ID = "extra_session_id"
+        const val ACTION_TRANSCRIPT_CHANGED = "com.guardvoice.action.TRANSCRIPT_CHANGED"
+        const val ACTION_STREAM_STATUS_CHANGED = "com.guardvoice.action.STREAM_STATUS_CHANGED"
+        const val EXTRA_STREAM_STATUS = "extra_stream_status"
         const val ACTION_AUDIO_HEALTH_ALERT =
             "com.guardvoice.action.AUDIO_HEALTH_ALERT"
         const val EXTRA_HEALTH_ALERT_TYPE = "extra_health_alert_type"
@@ -427,7 +442,6 @@ class AudioCaptureService : Service() {
         private const val ACTION_START = "com.guardvoice.action.START_CAPTURE"
         private const val ACTION_STOP = "com.guardvoice.action.STOP_CAPTURE"
         private const val EXTRA_PHONE_NUMBER = "extra_phone_number"
-        private const val EXTRA_SESSION_ID = "extra_session_id"
         private const val TAG = "AudioCaptureService"
         private const val NOTIFICATION_CHANNEL_ID = "guardvoice_call_monitoring"
         private const val CAPTURE_NOTIFICATION_ID = 2002

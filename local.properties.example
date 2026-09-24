@@ -1,0 +1,11 @@
+# Copy to local.properties (git-ignored)
+# Backend WebSocket proxy for streaming PCM -> Gemini Live
+# For Android emulator pointing to host machine:
+BACKEND_WS_URL=ws://10.0.2.2:4000/ws/audio-stream
+# For physical device on same LAN:
+# BACKEND_WS_URL=ws://192.168.1.10:4000/ws/audio-stream
+# For production:
+# BACKEND_WS_URL=wss://your-backend.example.com/ws/audio-stream
+
+GROQ_API_KEY=
+GROQ_WHISPER_MODEL=whisper-large-v3-turbo

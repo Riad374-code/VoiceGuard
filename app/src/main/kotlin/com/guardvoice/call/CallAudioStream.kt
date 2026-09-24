@@ -7,6 +7,7 @@ import com.guardvoice.data.CallSessionRepository
 import com.guardvoice.data.CallVerdict
 import com.guardvoice.db.GuardVoiceRepository
 import com.guardvoice.R
+import com.guardvoice.stream.GeminiLiveStreamClient
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -90,6 +91,8 @@ internal object CallAudioStream {
             }
 
             consecutiveEmptyCount = 0
+            // Feed streaming fallback engine so accumulative 30s windows work even without WS
+            try { GeminiLiveStreamClient.feedFallbackTranscript(transcription) } catch (_: Exception) {}
 
             val result = ScamAnalyzer.analyze(transcription)
             val summary = when (result.verdict) {
