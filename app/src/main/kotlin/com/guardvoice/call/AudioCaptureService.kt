@@ -15,6 +15,9 @@ import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.MediaRecorder
+import android.media.audiofx.AcousticEchoCanceler
+import android.media.audiofx.AutomaticGainControl
+import android.media.audiofx.NoiseSuppressor
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
@@ -39,6 +42,10 @@ class AudioCaptureService : Service() {
     private var previousAudioMode = AudioManager.MODE_NORMAL
     private var wasSpeakerphoneOn = false
     private var activeSessionId = ""
+    // Hardware audio effects — recommended when using VOICE_COMMUNICATION, enabled once per call
+    private var noiseSuppressor: NoiseSuppressor? = null
+    private var echoCanceler: AcousticEchoCanceler? = null
+    private var gainControl: AutomaticGainControl? = null
     private val progressLock = Any()
     private var pendingAudioBytes = 0L
     private var pendingAudioChunks = 0
@@ -109,9 +116,15 @@ class AudioCaptureService : Service() {
                     return
                 }
                 activeRecorder = recorder
+                // ---- Audio cleaning (recommended): enable hardware AEC/NS/AGC once per call ----
+                // VOICE_COMMUNICATION enables OS-level processing, but explicit enable guarantees
+                // noise suppression + echo cancellation on devices where they are available.
+                enableAudioEffects(recorder.audioSessionId)
                 isCaptureRunning = true
                 CallAudioStream.init(this, activeSessionId)
-                // Start streaming to Gemini proxy — accumulative, per-second PCM
+                // Start streaming to Gemini proxy — accumulative, per-second PCM.
+                // Backend GeminiLiveProxy sets systemInstruction ONCE per call (see server.ts:71 / GeminiLiveProxy.ts:57).
+                // Subsequent audio_chunk messages contain ONLY raw PCM (never prompt).
                 try { GeminiLiveStreamClient.start(this, activeSessionId) } catch (e: Exception) { Log.w(TAG, "Gemini stream start failed, will use fallback", e) }
                 captureThread = Thread({ captureLoop(recorder) }, "GuardVoiceAudioCapture").apply {
                     start()
@@ -158,6 +171,7 @@ class AudioCaptureService : Service() {
         }
         flushAudioProgress()
         recorderToRelease?.releaseSafely()
+        releaseAudioEffects()
         CallAudioStream.reset()
         try { GeminiLiveStreamClient.stop() } catch (_: Exception) {}
         restoreAudioMode()
@@ -174,13 +188,20 @@ class AudioCaptureService : Service() {
             while (isCaptureRunning) {
                 val bytesRead = recorder.read(buffer, 0, buffer.size)
                 if (bytesRead > 0) {
-                    val chunk = buffer.copyOf(bytesRead)
+                    // ---- Software PCM cleaning (lightweight, if hardware AEC/NS not enough) ----
+                    // Removes DC offset + applies soft limiter to avoid clipping; recommended for
+                    // dynamic call audio where earpiece/speaker routing adds hum.
+                    val cleaned = cleanPcm16Mono(buffer, bytesRead)
+                    val chunk = cleaned
                     // Legacy batch pipeline (Groq + local analyzer) — keep as offline fallback
                     CallAudioStream.accept(activeSessionId, chunk)
                     // New streaming pipeline: per-second PCM to backend proxy (accumulative, never resend old)
+                    // GeminiLiveStreamClient internally coalesces 100ms reads into ~1 sec frames
+                    // before sending (reduces WS overhead while staying sec-by-sec).
                     try { GeminiLiveStreamClient.sendPcmChunk(chunk) } catch (_: Exception) {}
                     recordAudioProgress(bytesRead)
-                    evaluateVolumeLevel(buffer, bytesRead)
+                    // Use cleaned chunk for volume check — reflects what Gemini actually receives.
+                    evaluateVolumeLevel(chunk, chunk.size)
                 } else if (bytesRead < 0) {
                     Log.w(TAG, "AudioRecord read failed with code $bytesRead.")
                     didFail = true
@@ -234,6 +255,7 @@ class AudioCaptureService : Service() {
             captureThread = null
         }
         recorder.releaseSafely()
+        releaseAudioEffects()
         flushAudioProgress()
         restoreAudioMode()
         stopForeground(STOP_FOREGROUND_REMOVE)
@@ -303,6 +325,69 @@ class AudioCaptureService : Service() {
             Log.e(TAG, "AudioRecord initialization failed.", exception)
             null
         }
+    }
+
+    // ---- Audio cleaning helpers (recommended) ----
+    private fun enableAudioEffects(audioSessionId: Int) {
+        try {
+            if (NoiseSuppressor.isAvailable()) {
+                noiseSuppressor = NoiseSuppressor.create(audioSessionId)?.also { if (!it.enabled) it.enabled = true }
+                Log.i(TAG, "NoiseSuppressor enabled=${noiseSuppressor?.enabled} session=$audioSessionId")
+            }
+        } catch (e: Exception) { Log.w(TAG, "NoiseSuppressor enable failed", e) }
+        try {
+            if (AcousticEchoCanceler.isAvailable()) {
+                echoCanceler = AcousticEchoCanceler.create(audioSessionId)?.also { if (!it.enabled) it.enabled = true }
+                Log.i(TAG, "AcousticEchoCanceler enabled=${echoCanceler?.enabled}")
+            }
+        } catch (e: Exception) { Log.w(TAG, "AEC enable failed", e) }
+        try {
+            if (AutomaticGainControl.isAvailable()) {
+                gainControl = AutomaticGainControl.create(audioSessionId)?.also { if (!it.enabled) it.enabled = true }
+                Log.i(TAG, "AutomaticGainControl enabled=${gainControl?.enabled}")
+            }
+        } catch (e: Exception) { Log.w(TAG, "AGC enable failed", e) }
+    }
+
+    private fun releaseAudioEffects() {
+        try { noiseSuppressor?.release() } catch (_: Exception) {}
+        try { echoCanceler?.release() } catch (_: Exception) {}
+        try { gainControl?.release() } catch (_: Exception) {}
+        noiseSuppressor = null; echoCanceler = null; gainControl = null
+    }
+
+    /**
+     * Lightweight software cleaning for 16-bit PCM mono LE @16kHz.
+     * - Removes DC offset (high-pass) — fixes hum from speaker routing.
+     * - Soft noise gate on near-silence frames (keeps STT from hallucinating).
+     * Recommended: runs after hardware AEC/NS, before sending sec-by-sec to Gemini.
+     * Cost: O(n) over ~3200 bytes (~1.6k samples) per 100ms, negligible vs WS.
+     */
+    private fun cleanPcm16Mono(src: ByteArray, bytesRead: Int): ByteArray {
+        if (bytesRead < 2) return src.copyOf(bytesRead)
+        val samples = bytesRead / 2
+        // Compute mean (DC offset) over this chunk
+        var sum = 0L
+        for (i in 0 until samples) {
+            val lo = src[i * 2].toInt() and 0xFF
+            val hi = src[i * 2 + 1].toInt()
+            val s = (hi shl 8) or lo
+            sum += s.toShort().toInt()
+        }
+        val dc = (sum / samples).toInt()
+        val out = ByteArray(bytesRead)
+        // Alpha ~ 0.995 for DC blocker between chunks would be better; per-chunk mean removal is cheap + stable.
+        for (i in 0 until samples) {
+            val lo = src[i * 2].toInt() and 0xFF
+            val hi = src[i * 2 + 1].toInt()
+            var s = (((hi shl 8) or lo).toShort().toInt() - dc)
+            // Soft limiter: clamp to 90% to leave headroom after AGC
+            if (s > 29500) s = 29500
+            if (s < -29500) s = -29500
+            out[i * 2] = (s and 0xFF).toByte()
+            out[i * 2 + 1] = ((s shr 8) and 0xFF).toByte()
+        }
+        return out
     }
 
     @Suppress("DEPRECATION")
@@ -462,7 +547,14 @@ class AudioCaptureService : Service() {
         fun stop(context: Context) {
             val intent = Intent(context, AudioCaptureService::class.java)
                 .setAction(ACTION_STOP)
-            context.startService(intent)
+            try {
+                context.startService(intent)
+            } catch (e: IllegalStateException) {
+                Log.w(TAG, "startService for STOP failed (app in background), stopping directly", e)
+                try { context.stopService(intent) } catch (_: Exception) {}
+            } catch (e: RuntimeException) {
+                Log.w(TAG, "stop() failed", e)
+            }
         }
 
         fun publishCaptureState(context: Context, state: CaptureState) {

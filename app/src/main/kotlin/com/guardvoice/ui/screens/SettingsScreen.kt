@@ -1,5 +1,6 @@
 package com.guardvoice.ui.screens
 
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -8,6 +9,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -21,7 +24,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import com.guardvoice.stream.StreamSettings
 import com.guardvoice.ui.clickableWithoutRipple
 import com.guardvoice.ui.components.AppSurface
 import com.guardvoice.ui.components.SectionLabel
@@ -53,6 +58,7 @@ fun SettingsScreen() {
         }
 
         SettingsGroup()
+        BackendServerPanel()
         SensitivityPanel()
     }
 }
@@ -76,6 +82,109 @@ private fun SettingsGroup() {
                     SmallDivider()
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun BackendServerPanel() {
+    val context = LocalContext.current
+    var url by rememberSaveable { mutableStateOf(StreamSettings.getBackendWsUrl(context)) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    fun onSave() {
+        val trimmed = url.trim()
+        if (trimmed.isBlank()) {
+            error = "URL cannot be empty"
+            return
+        }
+        // Allow bare host:port — StreamSettings normalizes.
+        if (!trimmed.startsWith("ws://") && !trimmed.startsWith("wss://") &&
+            !trimmed.startsWith("http://") && !trimmed.startsWith("https://") &&
+            !trimmed.contains('.') && !trimmed.contains(':')
+        ) {
+            error = "Enter a valid URL, e.g. wss://your-server.com"
+            return
+        }
+        StreamSettings.saveBackendWsUrl(context, trimmed)
+        val normalized = StreamSettings.getBackendWsUrl(context)
+        url = normalized
+        error = null
+        Toast.makeText(context, "Saved: $normalized", Toast.LENGTH_SHORT).show()
+    }
+
+    AppSurface {
+        Column(verticalArrangement = Arrangement.spacedBy(GuardSpace.Medium)) {
+            SectionLabel(text = "Analysis server")
+            Text(
+                text = "Where call audio is streamed for Gemini analysis (sec-by-second, prompt sent once per call).",
+                style = MaterialTheme.typography.bodyMedium,
+                color = GuardColors.InkMuted
+            )
+            OutlinedTextField(
+                value = url,
+                onValueChange = {
+                    url = it
+                    error = null
+                },
+                label = { Text("Backend WebSocket URL", style = MaterialTheme.typography.labelMedium) },
+                placeholder = { Text("wss://your-server.com/ws/audio-stream", style = MaterialTheme.typography.bodySmall, color = GuardColors.InkMuted) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(GuardRadius.Medium),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = GuardColors.Navy,
+                    unfocusedBorderColor = GuardColors.SurfaceMuted,
+                    focusedLabelColor = GuardColors.Navy,
+                    cursorColor = GuardColors.Navy
+                ),
+                isError = error != null,
+                supportingText = {
+                    Text(
+                        text = error ?: "Emulator: ws://10.0.2.2:4000/ws/audio-stream  •  Real device: wss://your-backend.com/ws/audio-stream",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (error != null) GuardColors.Rose else GuardColors.InkMuted
+                    )
+                }
+            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(GuardSpace.Small),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Save chip
+                Text(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(GuardRadius.Medium))
+                        .background(GuardColors.Navy)
+                        .padding(horizontal = GuardSpace.Large, vertical = GuardSpace.Medium)
+                        .clickableWithoutRipple { onSave() },
+                    text = "Save",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = GuardColors.Surface
+                )
+                Text(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(GuardRadius.Medium))
+                        .background(GuardColors.SurfaceMuted)
+                        .padding(horizontal = GuardSpace.Large, vertical = GuardSpace.Medium)
+                        .clickableWithoutRipple {
+                            StreamSettings.resetToDefault(context)
+                            url = StreamSettings.getBackendWsUrl(context)
+                            error = null
+                            Toast.makeText(context, "Reset to build default", Toast.LENGTH_SHORT).show()
+                        },
+                    text = "Reset",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = GuardColors.InkMuted
+                )
+            }
+            Text(
+                text = "Applies on next call. Deploy your backend (Node npm start with GEMINI_API_KEY=.env), then paste its wss:// URL here before sharing the APK.",
+                style = MaterialTheme.typography.bodySmall,
+                color = GuardColors.InkMuted
+            )
         }
     }
 }

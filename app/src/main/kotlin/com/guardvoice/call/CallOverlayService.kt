@@ -48,9 +48,52 @@ class CallOverlayService : Service() {
             val riskLevel = intent.getStringExtra(AudioCaptureService.EXTRA_RISK_LEVEL)
             val riskScore = intent.getIntExtra(AudioCaptureService.EXTRA_RISK_SCORE, 0)
             val transcript = intent.getStringExtra(AudioCaptureService.EXTRA_TRANSCRIPT).orEmpty()
-            val reasons = intent.getStringArrayExtra(AudioCaptureService.EXTRA_REASONS)
-                ?.toList().orEmpty()
-            updateVerdictDisplay(riskLevel, riskScore, transcript, reasons)
+            val transcriptDelta = intent.getStringExtra(AudioCaptureService.EXTRA_TRANSCRIPT_DELTA).orEmpty()
+            val reasons = intent.getStringArrayExtra(AudioCaptureService.EXTRA_REASONS)?.toList().orEmpty()
+            val keywords = intent.getStringArrayExtra(AudioCaptureService.EXTRA_KEYWORDS)?.toList().orEmpty()
+            val elapsedSec = intent.getFloatExtra(AudioCaptureService.EXTRA_ELAPSED_SEC, -1f)
+            updateVerdictDisplay(riskLevel, riskScore, transcript.ifBlank { transcriptDelta }, reasons, keywords, elapsedSec)
+        }
+    }
+    private val streamStatusReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            val status = intent.getStringExtra(AudioCaptureService.EXTRA_STREAM_STATUS).orEmpty()
+            if (status.isBlank()) return
+            val view = overlayView ?: return
+            val details = view.findViewById<TextView>(R.id.tv_verdict_details)
+            when (status) {
+                "Reconnecting" -> {
+                    details.visibility = View.VISIBLE
+                    details.text = "Reconnecting to analysis server…"
+                }
+                "Error" -> {
+                    details.visibility = View.VISIBLE
+                    details.text = "Offline — local analysis active"
+                }
+                "Connected", "GeminiConnected" -> {
+                    // Clear transient reconnect banner — verdict display will overwrite with real reasons shortly.
+                    // Only clear if we currently show the transient text.
+                    val cur = details.text?.toString().orEmpty()
+                    if (cur == "Reconnecting to analysis server…" || cur == "Offline — local analysis active") {
+                        details.text = ""
+                        details.visibility = View.GONE
+                    }
+                }
+            }
+        }
+    }
+    private val transcriptReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            // Live incremental transcript — updates overlay transcript line sub-second,
+            // even before the next 1-sec analysis packet arrives.
+            val delta = intent.getStringExtra(AudioCaptureService.EXTRA_TRANSCRIPT_DELTA).orEmpty()
+            val accum = intent.getStringExtra(AudioCaptureService.EXTRA_TRANSCRIPT).orEmpty()
+            val text = accum.ifBlank { delta }
+            if (text.isBlank()) return
+            val view = overlayView ?: return
+            val transcriptView = view.findViewById<TextView>(R.id.tv_transcript)
+            transcriptView.text = text
+            transcriptView.visibility = View.VISIBLE
         }
     }
     private val audioHealthReceiver = object : BroadcastReceiver() {
@@ -63,7 +106,9 @@ class CallOverlayService : Service() {
     private var isCaptureRequested = false
     private var isCaptureStateReceiverRegistered = false
     private var isVerdictReceiverRegistered = false
+    private var isTranscriptReceiverRegistered = false
     private var isAudioHealthReceiverRegistered = false
+    private var isStreamStatusReceiverRegistered = false
     private var activeSessionId = ""
 
     override fun onCreate() {
@@ -71,7 +116,9 @@ class CallOverlayService : Service() {
         ensureNotificationChannel()
         registerCaptureStateReceiver()
         registerVerdictReceiver()
+        registerTranscriptReceiver()
         registerAudioHealthReceiver()
+        registerStreamStatusReceiver()
         callStateMonitor.start()
     }
 
@@ -109,7 +156,9 @@ class CallOverlayService : Service() {
         removeOverlay()
         unregisterCaptureStateReceiver()
         unregisterVerdictReceiver()
+        unregisterTranscriptReceiver()
         unregisterAudioHealthReceiver()
+        unregisterStreamStatusReceiver()
         callStateMonitor.stop()
         stopForeground(STOP_FOREGROUND_REMOVE)
         super.onDestroy()
@@ -241,15 +290,18 @@ class CallOverlayService : Service() {
         riskLevel: String?,
         riskScore: Int,
         transcript: String,
-        reasons: List<String>
+        reasons: List<String>,
+        keywords: List<String> = emptyList(),
+        elapsedSec: Float = -1f
     ) {
         val view = overlayView ?: return
         val verdictView = view.findViewById<TextView>(R.id.tv_verdict)
         val transcriptView = view.findViewById<TextView>(R.id.tv_transcript)
         val reasonsView = view.findViewById<TextView>(R.id.tv_verdict_details)
+        val elapsedTag = if (elapsedSec >= 0) " • ${elapsedSec.toInt()}s" else ""
 
         val normalizedVerdictDisplay = displayForRiskLevel(riskLevel)
-        verdictView.text = normalizedVerdictDisplay.first
+        verdictView.text = "${normalizedVerdictDisplay.first} (${riskScore})${elapsedTag}"
         verdictView.setTextColor(normalizedVerdictDisplay.second)
 
         if (transcript.isNotBlank()) {
@@ -257,9 +309,19 @@ class CallOverlayService : Service() {
             transcriptView.visibility = View.VISIBLE
         }
 
-        if (reasons.isNotEmpty()) {
+        val detailsParts = mutableListOf<String>()
+        if (reasons.isNotEmpty()) detailsParts.add(reasons.joinToString(" / "))
+        if (keywords.isNotEmpty()) detailsParts.add("kw: ${keywords.take(6).joinToString(", ")}")
+        if (detailsParts.isNotEmpty()) {
             reasonsView.visibility = View.VISIBLE
-            reasonsView.text = reasons.joinToString(" / ")
+            reasonsView.text = detailsParts.joinToString(" — ")
+        } else if (reasons.isEmpty() && keywords.isEmpty() && reasonsView.visibility == View.VISIBLE) {
+            // Verdict update with no reasons clears prior transient status (e.g. "Reconnecting…")
+            val cur = reasonsView.text?.toString().orEmpty()
+            if (cur == "Reconnecting to analysis server…" || cur == "Offline — local analysis active" || cur.isBlank()) {
+                reasonsView.visibility = View.GONE
+                reasonsView.text = ""
+            }
         }
     }
 
@@ -420,6 +482,42 @@ class CallOverlayService : Service() {
         } finally {
             isAudioHealthReceiverRegistered = false
         }
+    }
+
+    private fun registerTranscriptReceiver() {
+        val filter = IntentFilter(AudioCaptureService.ACTION_TRANSCRIPT_CHANGED)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(transcriptReceiver, filter, RECEIVER_NOT_EXPORTED)
+            isTranscriptReceiverRegistered = true
+            return
+        }
+        @Suppress("DEPRECATION")
+        registerReceiver(transcriptReceiver, filter)
+        isTranscriptReceiverRegistered = true
+    }
+
+    private fun unregisterTranscriptReceiver() {
+        if (!isTranscriptReceiverRegistered) return
+        try { unregisterReceiver(transcriptReceiver) } catch (e: RuntimeException) { Log.w(TAG, "Transcript receiver already unregistered", e) }
+        finally { isTranscriptReceiverRegistered = false }
+    }
+
+    private fun registerStreamStatusReceiver() {
+        val filter = IntentFilter(AudioCaptureService.ACTION_STREAM_STATUS_CHANGED)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(streamStatusReceiver, filter, RECEIVER_NOT_EXPORTED)
+            isStreamStatusReceiverRegistered = true
+            return
+        }
+        @Suppress("DEPRECATION")
+        registerReceiver(streamStatusReceiver, filter)
+        isStreamStatusReceiverRegistered = true
+    }
+
+    private fun unregisterStreamStatusReceiver() {
+        if (!isStreamStatusReceiverRegistered) return
+        try { unregisterReceiver(streamStatusReceiver) } catch (e: RuntimeException) { Log.w(TAG, "Stream status receiver already unregistered", e) }
+        finally { isStreamStatusReceiverRegistered = false }
     }
 
     private fun updateAudioHealthWarning(message: String) {

@@ -34,13 +34,25 @@ import com.guardvoice.ui.components.TranscriptLine
 import com.guardvoice.ui.model.AppDestination
 import com.guardvoice.ui.model.RiskLevel
 import com.guardvoice.ui.model.demoAnalysis
+import com.guardvoice.ui.model.liveAnalysisFromSession
 import com.guardvoice.ui.theme.GuardColors
 import com.guardvoice.ui.theme.GuardRadius
 import com.guardvoice.ui.theme.GuardSize
 import com.guardvoice.ui.theme.GuardSpace
+import com.guardvoice.data.CallSessionRepository
+import com.guardvoice.data.CallSessionStatus
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.platform.LocalContext
 
 @Composable
 fun OverlayScreen(onNavigate: (AppDestination) -> Unit) {
+    val context = LocalContext.current
+    val sessions by CallSessionRepository.observe(context).collectAsState()
+    val liveSession = sessions.firstOrNull { it.status == CallSessionStatus.Listening || it.status == CallSessionStatus.Detected }
+        ?: sessions.firstOrNull()
+    val liveAnalysis = liveAnalysisFromSession(liveSession)
+    val isLive = liveSession != null && liveSession.status != CallSessionStatus.Completed && liveSession.status != CallSessionStatus.Declined
     var isTrackingAllowed by rememberSaveable { mutableStateOf(false) }
 
     Column(verticalArrangement = Arrangement.spacedBy(GuardSpace.Large)) {
@@ -63,6 +75,8 @@ fun OverlayScreen(onNavigate: (AppDestination) -> Unit) {
 
         PhoneCallStage(
             isTrackingAllowed = isTrackingAllowed,
+            liveAnalysis = liveAnalysis,
+            isLive = isLive,
             onAllowTracking = { isTrackingAllowed = true },
             onDecline = { isTrackingAllowed = false },
             onFinish = { onNavigate(AppDestination.Summary) }
@@ -73,6 +87,8 @@ fun OverlayScreen(onNavigate: (AppDestination) -> Unit) {
 @Composable
 private fun PhoneCallStage(
     isTrackingAllowed: Boolean,
+    liveAnalysis: com.guardvoice.ui.model.LiveAnalysis,
+    isLive: Boolean,
     onAllowTracking: () -> Unit,
     onDecline: () -> Unit,
     onFinish: () -> Unit
@@ -92,7 +108,7 @@ private fun PhoneCallStage(
         ) {
             MockDialerBackground()
             if (isTrackingAllowed) {
-                LiveVerdictPopup(onFinish = onFinish)
+                LiveVerdictPopup(analysis = liveAnalysis, isLive = isLive, onFinish = onFinish)
             } else {
                 ConsentPopup(
                     onAllowTracking = onAllowTracking,
@@ -172,8 +188,7 @@ private fun ConsentPopup(
 }
 
 @Composable
-private fun LiveVerdictPopup(onFinish: () -> Unit) {
-    val analysis = demoAnalysis
+private fun LiveVerdictPopup(analysis: com.guardvoice.ui.model.LiveAnalysis, isLive: Boolean, onFinish: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -190,9 +205,9 @@ private fun LiveVerdictPopup(onFinish: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             StatusPill(
-                text = "Analyzing",
+                text = if (isLive) "Live" else analysis.riskLevel.label,
                 riskLevel = analysis.riskLevel,
-                isLive = true
+                isLive = isLive
             )
             Text(
                 text = analysis.elapsed,

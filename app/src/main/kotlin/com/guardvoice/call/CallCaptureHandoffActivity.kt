@@ -65,7 +65,7 @@ class CallCaptureHandoffActivity : Activity() {
         private const val TAG = "CallCaptureHandoff"
         private const val EXTRA_PHONE_NUMBER = "extra_phone_number"
         private const val EXTRA_SESSION_ID = "extra_session_id"
-        private const val FINISH_DELAY_MS = 300L
+        private const val FINISH_DELAY_MS = 600L
 
         fun start(context: Context, phoneNumber: String, sessionId: String) {
             val intent = Intent(context, CallCaptureHandoffActivity::class.java)

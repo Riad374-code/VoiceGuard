@@ -3,6 +3,7 @@ package com.guardvoice.call
 import android.content.Context
 import android.content.Intent
 import android.util.Log
+import com.guardvoice.BuildConfig
 import com.guardvoice.data.CallSessionRepository
 import com.guardvoice.data.CallVerdict
 import com.guardvoice.db.GuardVoiceRepository
@@ -35,6 +36,13 @@ internal object CallAudioStream {
     }
 
     fun accept(sessionId: String, chunk: ByteArray) {
+        // When live Gemini streaming is active, transcription+scoring happens server-side sec-by-sec.
+        // Skipping the legacy Groq batch path avoids duplicate verdicts and "no voice" spam.
+        if (GeminiLiveStreamClient.isStreamingConnected()) return
+        // Without a Groq key there's no offline STT — avoid queuing useless PCM that would
+        // just emit "no voice" warnings.
+        if (BuildConfig.GROQ_API_KEY.trim().isBlank()) return
+
         val data: ByteArray?
         synchronized(lock) {
             if (sessionId != activeSessionId || appContext == null) return
@@ -82,10 +90,14 @@ internal object CallAudioStream {
 
             val transcription = GroqWhisperClient.transcribe(pcmData)
             if (transcription.isNullOrBlank()) {
-                consecutiveEmptyCount++
-                if (consecutiveEmptyCount >= MAX_EMPTY_CONSECUTIVE) {
-                    sendNoVoiceAlert(context)
-                    consecutiveEmptyCount = 0
+                // Only count/alert when offline STT is actually configured — otherwise "no voice"
+                // is just "no key configured" noise.
+                if (BuildConfig.GROQ_API_KEY.trim().isNotBlank()) {
+                    consecutiveEmptyCount++
+                    if (consecutiveEmptyCount >= MAX_EMPTY_CONSECUTIVE) {
+                        sendNoVoiceAlert(context)
+                        consecutiveEmptyCount = 0
+                    }
                 }
                 return
             }
