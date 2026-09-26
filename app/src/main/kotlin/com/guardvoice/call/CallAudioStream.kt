@@ -13,7 +13,10 @@ import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
 internal object CallAudioStream {
-    private const val BUFFER_THRESHOLD = 96_000
+    // 5-sec window at 16kHz PCM16 mono = 32000 *5 = 160_000 bytes. Matches online WSS windowing.
+    // When streaming is offline we batch to this size so local STT + scoring aligns with 5s chunks.
+    // Only 1-sec overlap is handled client-side in GeminiLiveStreamClient; this batch is non-overlapping offline fallback.
+    private const val BUFFER_THRESHOLD = 160_000
     private const val TAG = "CallAudioStream"
     private const val MAX_EMPTY_CONSECUTIVE = 3
 
@@ -103,50 +106,13 @@ internal object CallAudioStream {
             }
 
             consecutiveEmptyCount = 0
-            // Feed streaming fallback engine so accumulative 30s windows work even without WS
+            // Offline 5s scoring is now handled centrally by GeminiLiveStreamClient's fallback engine
+            // (cumulative active score + per-5s granular history). Keeps 5-by-5 spec and prevents duplicate
+            // verdicts. We just feed the transcript there and let it persist/broadcast.
+            // Audio bytes are NOT saved to disk — only transcript + scores are persisted.
             try { GeminiLiveStreamClient.feedFallbackTranscript(transcription) } catch (_: Exception) {}
-
-            val result = ScamAnalyzer.analyze(transcription)
-            val summary = when (result.verdict) {
-                CallVerdict.Safe -> "Conversation appears safe."
-                CallVerdict.Suspicious -> "Conversation has suspicious elements."
-                CallVerdict.Scam -> "Scam patterns detected!"
-                CallVerdict.Pending -> "Analyzing conversation..."
-            }.let { base ->
-                if (result.reasons.isNotEmpty()) {
-                    "$base ${result.reasons.joinToString(". ")}"
-                } else base
-            }
-
-            CallSessionRepository.saveAnalysis(
-                context = context,
-                sessionId = sid,
-                verdict = result.verdict,
-                riskScore = result.riskScore,
-                transcriptPreview = transcription,
-                summary = summary,
-                reasons = result.reasons
-            )
-
-            try {
-                GuardVoiceRepository.getInstance(context).insertDetection(
-                    sessionId = sid,
-                    transcript = transcription,
-                    verdict = result.verdict,
-                    riskScore = result.riskScore,
-                    reasons = result.reasons
-                )
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to persist detection to SQLite", e)
-            }
-
-            publishVerdict(
-                context = context,
-                verdict = result.verdict.name,
-                riskScore = result.riskScore,
-                transcript = transcription,
-                reasons = result.reasons
-            )
+            // NOTE: no direct ScamAnalyzer.save here — fallback engine is single source of truth for offline
+            // This ensures active score monotonicity (per-5s chunks increase/decrease cumulative) and history stores each window.
         } catch (e: Exception) {
             Log.e(TAG, "Audio processing failed", e)
         } finally {

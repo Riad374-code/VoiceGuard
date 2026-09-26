@@ -41,11 +41,33 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "GROQ_API_KEY", buildConfigString("GROQ_API_KEY"))
+        buildConfigField("String", "GROQ_MODEL", buildConfigString("GROQ_MODEL", "llama-3.1-8b-instant"))
+        buildConfigField("String", "DEEPGRAM_API_KEY", run {
+            val v = providers.environmentVariable("DEEPGRAM_API_KEY").orNull
+                ?: providers.environmentVariable("DEEPGRAM_SST").orNull
+                ?: dotenvProperties.getProperty("DEEPGRAM_API_KEY")
+                ?: dotenvProperties.getProperty("DEEPGRAM_SST")
+                ?: localProperties.getProperty("DEEPGRAM_API_KEY")
+                ?: localProperties.getProperty("DEEPGRAM_SST")
+                ?: ""
+            "\"" + v.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+        })
+        buildConfigField("String", "DEEPGRAM_SST", run {
+            val v = providers.environmentVariable("DEEPGRAM_SST").orNull
+                ?: providers.environmentVariable("DEEPGRAM_API_KEY").orNull
+                ?: dotenvProperties.getProperty("DEEPGRAM_SST")
+                ?: dotenvProperties.getProperty("DEEPGRAM_API_KEY")
+                ?: localProperties.getProperty("DEEPGRAM_SST")
+                ?: localProperties.getProperty("DEEPGRAM_API_KEY")
+                ?: ""
+            "\"" + v.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+        })
         buildConfigField(
             "String",
             "GROQ_WHISPER_MODEL",
             buildConfigString("GROQ_WHISPER_MODEL", "whisper-large-v3-turbo")
         )
+        buildConfigField("String", "DEEPGRAM_MODEL", buildConfigString("DEEPGRAM_MODEL", "nova-3"))
         buildConfigField("String", "BACKEND_WS_URL", buildConfigString("BACKEND_WS_URL", "ws://10.0.2.2:4000/ws/audio-stream"))
     }
 

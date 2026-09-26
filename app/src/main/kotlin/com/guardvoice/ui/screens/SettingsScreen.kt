@@ -117,7 +117,7 @@ private fun BackendServerPanel() {
         Column(verticalArrangement = Arrangement.spacedBy(GuardSpace.Medium)) {
             SectionLabel(text = "Analysis server")
             Text(
-                text = "Where call audio is streamed for Gemini analysis (sec-by-second, prompt sent once per call).",
+                text = "Where call audio is streamed — 5-sec windows with 1-sec overlap via Deepgram STT + Groq instant scoring. Only 1-sec overlap PCM is kept in RAM, raw voice is never saved.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = GuardColors.InkMuted
             )

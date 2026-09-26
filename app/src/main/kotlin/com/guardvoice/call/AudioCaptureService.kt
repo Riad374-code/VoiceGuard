@@ -122,10 +122,11 @@ class AudioCaptureService : Service() {
                 enableAudioEffects(recorder.audioSessionId)
                 isCaptureRunning = true
                 CallAudioStream.init(this, activeSessionId)
-                // Start streaming to Gemini proxy — accumulative, per-second PCM.
-                // Backend GeminiLiveProxy sets systemInstruction ONCE per call (see server.ts:71 / GeminiLiveProxy.ts:57).
-                // Subsequent audio_chunk messages contain ONLY raw PCM (never prompt).
-                try { GeminiLiveStreamClient.start(this, activeSessionId) } catch (e: Exception) { Log.w(TAG, "Gemini stream start failed, will use fallback", e) }
+                // Start streaming to Deepgram+Groq proxy — 5-sec windows with 1-sec overlap.
+                // Voice is Buffered to 5s windows (only 1s overlap kept in RAM, raw PCM discarded post-send).
+                // Backend DeepgramGroqProxy streams transcription + Groq llama-3.1-8b-instant scoring per window,
+                // active cumulative score kept via AccumulativeScoringEngine and persisted to history.
+                try { GeminiLiveStreamClient.start(this, activeSessionId) } catch (e: Exception) { Log.w(TAG, "Deepgram/Groq stream start failed, will use local fallback", e) }
                 captureThread = Thread({ captureLoop(recorder) }, "GuardVoiceAudioCapture").apply {
                     start()
                 }
@@ -193,11 +194,11 @@ class AudioCaptureService : Service() {
                     // dynamic call audio where earpiece/speaker routing adds hum.
                     val cleaned = cleanPcm16Mono(buffer, bytesRead)
                     val chunk = cleaned
-                    // Legacy batch pipeline (Groq + local analyzer) — keep as offline fallback
+                    // Offline fallback (5s batches, no voice saved) — only active when WSS down
                     CallAudioStream.accept(activeSessionId, chunk)
-                    // New streaming pipeline: per-second PCM to backend proxy (accumulative, never resend old)
-                    // GeminiLiveStreamClient internally coalesces 100ms reads into ~1 sec frames
-                    // before sending (reduces WS overhead while staying sec-by-sec).
+                    // Primary pipeline: 5-sec WSS windows with 1-sec overlap to backend Deepgram+Groq
+                    // GeminiLiveStreamClient discards window bytes after send, retains only 32k overlap in RAM.
+                    // Scores per window update active cumulative + history DB.
                     try { GeminiLiveStreamClient.sendPcmChunk(chunk) } catch (_: Exception) {}
                     recordAudioProgress(bytesRead)
                     // Use cleaned chunk for volume check — reflects what Gemini actually receives.
