@@ -16,6 +16,8 @@ fun loadRootProperties(fileName: String): Properties =
 
 val dotenvProperties = loadRootProperties(".env")
 val localProperties = loadRootProperties("local.properties")
+val keystoreProperties = loadRootProperties("keystore.properties")
+val debugKeystoreFile = rootProject.file("${System.getProperty("user.home")}/.android/debug.keystore")
 
 fun buildConfigString(name: String, fallback: String = ""): String {
     val rawValue = providers.environmentVariable(name).orNull
@@ -36,8 +38,8 @@ android {
         applicationId = "com.guardvoice"
         minSdk = 29
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "GROQ_API_KEY", buildConfigString("GROQ_API_KEY"))
@@ -62,18 +64,41 @@ android {
                 ?: ""
             "\"" + v.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
         })
-        buildConfigField(
-            "String",
-            "GROQ_WHISPER_MODEL",
-            buildConfigString("GROQ_WHISPER_MODEL", "whisper-large-v3-turbo")
-        )
         buildConfigField("String", "DEEPGRAM_MODEL", buildConfigString("DEEPGRAM_MODEL", "nova-3"))
         buildConfigField("String", "BACKEND_WS_URL", buildConfigString("BACKEND_WS_URL", "ws://10.0.2.2:4000/ws/audio-stream"))
+    }
+
+    signingConfigs {
+        create("release") {
+            val storeFileProp = keystoreProperties.getProperty("storeFile").orEmpty()
+            val storeFileRef = rootProject.file(storeFileProp)
+            if (storeFileProp.isNotBlank() && storeFileRef.isFile) {
+                storeFile = storeFileRef
+                storePassword = keystoreProperties.getProperty("storePassword").orEmpty()
+                keyAlias = keystoreProperties.getProperty("keyAlias").orEmpty()
+                keyPassword = keystoreProperties.getProperty("keyPassword").orEmpty()
+            } else {
+                // No release keystore configured — fall back to the local debug key so
+                // assembleRelease still yields an installable APK for direct sharing.
+                if (debugKeystoreFile.isFile) {
+                    storeFile = debugKeystoreFile
+                    storePassword = "android"
+                    keyAlias = "androiddebugkey"
+                    keyPassword = "android"
+                }
+            }
+        }
     }
 
     buildFeatures {
         compose = true
         buildConfig = true
+    }
+
+    buildTypes {
+        release {
+            signingConfig = signingConfigs.getByName("release")
+        }
     }
 
     compileOptions {

@@ -3,7 +3,6 @@ package com.guardvoice.call
 import android.content.Context
 import android.content.Intent
 import android.util.Log
-import com.guardvoice.BuildConfig
 import com.guardvoice.data.CallSessionRepository
 import com.guardvoice.data.CallVerdict
 import com.guardvoice.db.GuardVoiceRepository
@@ -19,6 +18,9 @@ internal object CallAudioStream {
     private const val BUFFER_THRESHOLD = 160_000
     private const val TAG = "CallAudioStream"
     private const val MAX_EMPTY_CONSECUTIVE = 3
+    // Hard cap (~30s) so a stalled network can't queue unbounded PCM while a window
+    // is being transcribed+scored on the single executor. Oldest audio is dropped first.
+    private const val MAX_BUFFERED_BYTES = 960_000
 
     private val lock = Any()
     private val audioBuffer = mutableListOf<ByteArray>()
@@ -39,18 +41,23 @@ internal object CallAudioStream {
     }
 
     fun accept(sessionId: String, chunk: ByteArray) {
-        // When live Gemini streaming is active, transcription+scoring happens server-side sec-by-sec.
-        // Skipping the legacy Groq batch path avoids duplicate verdicts and "no voice" spam.
+        // When live backend streaming is active, transcription+scoring happens server-side.
+        // Skipping the on-device Deepgram batch path avoids duplicate verdicts and "no voice" spam.
         if (GeminiLiveStreamClient.isStreamingConnected()) return
-        // Without a Groq key there's no offline STT — avoid queuing useless PCM that would
+        // Without a Deepgram key there's no on-device STT — avoid queuing useless PCM that would
         // just emit "no voice" warnings.
-        if (BuildConfig.GROQ_API_KEY.trim().isBlank()) return
+        if (!DeepgramSttClient.isConfigured()) return
 
         val data: ByteArray?
         synchronized(lock) {
             if (sessionId != activeSessionId || appContext == null) return
             audioBuffer.add(chunk)
             bufferSize += chunk.size
+            // Bound memory while a window is stuck in network I/O: drop oldest first.
+            while (bufferSize > MAX_BUFFERED_BYTES && audioBuffer.isNotEmpty()) {
+                val dropped = audioBuffer.removeAt(0)
+                bufferSize -= dropped.size
+            }
             data = if (bufferSize >= BUFFER_THRESHOLD && !isProcessing.get()) {
                 isProcessing.set(true)
                 extractBuffer()
@@ -91,11 +98,11 @@ internal object CallAudioStream {
             val sid = synchronized(lock) { activeSessionId }
             if (sid.isBlank()) return
 
-            val transcription = GroqWhisperClient.transcribe(pcmData)
+            val transcription = DeepgramSttClient.transcribe(pcmData)
             if (transcription.isNullOrBlank()) {
-                // Only count/alert when offline STT is actually configured — otherwise "no voice"
+                // Only count/alert when on-device STT is actually configured — otherwise "no voice"
                 // is just "no key configured" noise.
-                if (BuildConfig.GROQ_API_KEY.trim().isNotBlank()) {
+                if (DeepgramSttClient.isConfigured()) {
                     consecutiveEmptyCount++
                     if (consecutiveEmptyCount >= MAX_EMPTY_CONSECUTIVE) {
                         sendNoVoiceAlert(context)

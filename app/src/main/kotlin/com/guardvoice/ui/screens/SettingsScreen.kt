@@ -95,7 +95,11 @@ private fun BackendServerPanel() {
     fun onSave() {
         val trimmed = url.trim()
         if (trimmed.isBlank()) {
-            error = "URL cannot be empty"
+            // Empty = on-device mode (direct Deepgram STT + Groq llama, no server).
+            StreamSettings.resetToDefault(context)
+            url = StreamSettings.getBackendWsUrl(context)
+            error = null
+            Toast.makeText(context, "On-device mode (no server)", Toast.LENGTH_SHORT).show()
             return
         }
         // Allow bare host:port — StreamSettings normalizes.
@@ -141,7 +145,7 @@ private fun BackendServerPanel() {
                 isError = error != null,
                 supportingText = {
                     Text(
-                        text = error ?: "Emulator: ws://10.0.2.2:4000/ws/audio-stream  •  Real device: wss://your-backend.com/ws/audio-stream",
+                        text = error ?: "Empty = on-device mode (Deepgram + Groq, no server needed)  •  Emulator: ws://10.0.2.2:4000/ws/audio-stream  •  Real device server: wss://your-backend.com/ws/audio-stream",
                         style = MaterialTheme.typography.bodySmall,
                         color = if (error != null) GuardColors.Rose else GuardColors.InkMuted
                     )
@@ -181,7 +185,7 @@ private fun BackendServerPanel() {
                 )
             }
             Text(
-                text = "Applies on next call. Deploy your backend (Node npm start with GEMINI_API_KEY=.env), then paste its wss:// URL here before sharing the APK.",
+                text = "Applies on next call. Without a backend the APK still works fully on-device (Deepgram STT + Groq llama scoring with baked keys). To use live server scoring, deploy your backend (Node npm start with DEEPGRAM_API_KEY + GROQ_API_KEY in backend/.env), then paste its wss:// URL here before sharing the APK.",
                 style = MaterialTheme.typography.bodySmall,
                 color = GuardColors.InkMuted
             )

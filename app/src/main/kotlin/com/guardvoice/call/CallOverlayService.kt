@@ -374,7 +374,7 @@ class CallOverlayService : Service() {
             startForeground(
                 OVERLAY_NOTIFICATION_ID,
                 notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_SHORT_SERVICE
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
             )
             return
         }

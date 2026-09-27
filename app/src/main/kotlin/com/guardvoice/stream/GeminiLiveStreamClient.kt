@@ -4,9 +4,8 @@ import android.content.Context
 import android.content.Intent
 import android.util.Base64
 import android.util.Log
-import com.guardvoice.BuildConfig
 import com.guardvoice.call.AudioCaptureService
-import com.guardvoice.call.ScamAnalyzer
+import com.guardvoice.call.GroqLlamaScorer
 import com.guardvoice.data.CallSessionRepository
 import com.guardvoice.data.CallVerdict
 import com.guardvoice.db.GuardVoiceRepository
@@ -32,7 +31,8 @@ import java.util.concurrent.atomic.AtomicInteger
  *    This guarantees flow: next window shares 1 sec with previous for STT continuity.
  *  - Sends each 5-sec window as Base64 audio_chunk over WSS (sequence monotonic)
  *  - Receives per-window transcription + Groq instant analysis (risk 0-100)
- *  - Falls back to local AccumulativeScoringEngine + ScamAnalyzer when offline
+ *  - Falls back to on-device Deepgram STT + Groq llama scoring
+ *    (AccumulativeScoringEngine + ScamAnalyzer keyword rules as last resort) when offline
  *
  * Previous sec-by-sec (1s) Gemini logic replaced per user requirement.
  * Server (DeepgramGroqProxy) expects 5s windows with optional overlap; it also handles
@@ -488,11 +488,13 @@ object GeminiLiveStreamClient {
         )
     }
 
-    /** Immediate 5s local analysis (offline) — keeps active score live every chunk, not only every 30s window. */
+    /** Immediate 5s local analysis (offline) — Groq llama scoring with keyword-rule fallback. */
     private fun handleImmediateLocalTranscript(delta: String) {
         if (isConnected.get()) return // online: WS is source of truth, don't duplicate
         val ctx = appContext ?: return
-        val immediate = ScamAnalyzer.analyze(delta)
+        // On-device pipeline: Deepgram STT already produced `delta`; score it with Groq llama
+        // (falls back to local ScamAnalyzer keyword rules when Groq is unreachable).
+        val immediate = GroqLlamaScorer.score(delta)
         // Update cumulative as monotonic max (mirrors AccumulativeScoringEngine but per-5s)
         val prevCum = fallbackEngine.getCumulativeScore()
         // We piggyback on engine's cumulativeReasons via manual track, but also emit immediate reasons
@@ -524,6 +526,7 @@ object GeminiLiveStreamClient {
                 .putExtra(AudioCaptureService.EXTRA_RISK_SCORE, effectiveCum)
                 .putExtra(AudioCaptureService.EXTRA_TRANSCRIPT, delta)
                 .putExtra(AudioCaptureService.EXTRA_REASONS, immediate.reasons.toTypedArray())
+                .putExtra(AudioCaptureService.EXTRA_KEYWORDS, immediate.keywords.toTypedArray())
                 .putExtra(AudioCaptureService.EXTRA_SESSION_ID, sessionId)
         )
     }
@@ -558,8 +561,11 @@ object GeminiLiveStreamClient {
             val fromSettings = StreamSettings.getBackendWsUrl(ctx).trim()
             if (fromSettings.isNotBlank()) return fromSettings
         }
-        val fromBuild = try { BuildConfig.BACKEND_WS_URL.trim() } catch (_: Exception) { "" }
-        if (fromBuild.isNotBlank()) return fromBuild
-        return "ws://10.0.2.2:4000/ws/audio-stream"
+        // Effective default already blanks emulator-loopback URLs on real devices.
+        val fromDefault = StreamSettings.getDefaultWsUrl().trim()
+        if (fromDefault.isNotBlank()) return fromDefault
+        // Last resort: emulator loopback (only reachable from an emulator).
+        if (StreamSettings.isEmulatorDevice()) return "ws://10.0.2.2:4000/ws/audio-stream"
+        return ""
     }
 }

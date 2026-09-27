@@ -27,6 +27,7 @@ captures/
 *.p12
 .env
 .env.*
+!.env.example
 google-services.json
 keystore.properties
 secrets.properties
