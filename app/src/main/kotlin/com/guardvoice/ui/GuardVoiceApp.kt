@@ -1,0 +1,159 @@
+package com.guardvoice.ui
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import com.guardvoice.account.AccountProfile
+import com.guardvoice.ui.components.AccountMenu
+import com.guardvoice.ui.components.BrandHeader
+import com.guardvoice.ui.model.AppDestination
+import com.guardvoice.ui.model.PlanTier
+import com.guardvoice.ui.model.PermissionAction
+import com.guardvoice.ui.model.PermissionItem
+import com.guardvoice.ui.screens.BillingScreen
+import com.guardvoice.ui.screens.AccountScreen
+import com.guardvoice.ui.screens.DashboardScreen
+import com.guardvoice.ui.screens.OverlayScreen
+import com.guardvoice.ui.screens.SetupScreen
+import com.guardvoice.ui.screens.SettingsScreen
+import com.guardvoice.ui.screens.SummaryScreen
+import com.guardvoice.ui.theme.GuardColors
+import com.guardvoice.ui.theme.GuardSpace
+
+@Composable
+fun GuardVoiceApp(
+    permissions: List<PermissionItem>,
+    onPermissionAction: (PermissionAction) -> Unit
+) {
+    var destinationName by rememberSaveable { mutableStateOf(AppDestination.Setup.name) }
+    var accountProfile by remember { mutableStateOf<AccountProfile?>(null) }
+    val destination = AppDestination.valueOf(destinationName)
+    val navigate: (AppDestination) -> Unit = { destinationName = it.name }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(GuardColors.Background)
+            .windowInsetsPadding(WindowInsets.safeDrawing)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 18.dp, vertical = GuardSpace.Large),
+            verticalArrangement = Arrangement.spacedBy(GuardSpace.Large)
+        ) {
+            AppChrome(
+                currentDestination = destination,
+                profile = accountProfile,
+                onNavigate = navigate,
+                onLogout = { accountProfile = null }
+            )
+            when (destination) {
+                AppDestination.Setup -> SetupScreen(
+                    permissions = permissions,
+                    onPermissionAction = onPermissionAction,
+                    onNavigate = navigate
+                )
+                AppDestination.Dashboard -> DashboardScreen(onNavigate = navigate)
+                AppDestination.Overlay -> OverlayScreen(onNavigate = navigate)
+                AppDestination.Billing -> BillingScreen()
+                AppDestination.Account -> AccountScreen(
+                    profile = accountProfile,
+                    onAuthenticate = { fullName, email ->
+                        accountProfile = AccountProfile(
+                            fullName = fullName,
+                            email = email,
+                            phoneNumber = "",
+                            planTier = PlanTier.Free
+                        )
+                    },
+                    onProfileUpdate = { profile -> accountProfile = profile },
+                    onLogout = { accountProfile = null },
+                    onOpenPlans = { navigate(AppDestination.Billing) }
+                )
+                AppDestination.Settings -> SettingsScreen()
+                AppDestination.Summary -> SummaryScreen(onNavigate = navigate)
+            }
+        }
+    }
+}
+
+@Composable
+private fun AppChrome(
+    currentDestination: AppDestination,
+    profile: AccountProfile?,
+    onNavigate: (AppDestination) -> Unit,
+    onLogout: () -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(GuardSpace.Medium)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Top
+        ) {
+            BrandHeader(modifier = Modifier.weight(1f))
+            AccountMenu(
+                profile = profile,
+                onOpenAccount = { onNavigate(AppDestination.Account) },
+                onOpenPlans = { onNavigate(AppDestination.Billing) },
+                onLogout = onLogout
+            )
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(GuardSpace.Small),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            AppDestination.entries
+                .filter { destination -> destination != AppDestination.Account }
+                .forEach { destination ->
+                val isSelected = destination == currentDestination
+                Text(
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .background(
+                            if (isSelected) GuardColors.Navy else GuardColors.SurfaceMuted
+                        )
+                        .padding(horizontal = 12.dp, vertical = 9.dp)
+                        .then(
+                            Modifier.clickableWithoutRipple {
+                                onNavigate(destination)
+                            }
+                        ),
+                    text = destination.label,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = if (isSelected) GuardColors.Surface else GuardColors.InkMuted,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+        }
+    }
+}
