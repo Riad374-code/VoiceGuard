@@ -1,9 +1,10 @@
 import java.util.Properties
 
 plugins {
-    id("com.android.application")
-    id("org.jetbrains.kotlin.android")
-    id("org.jetbrains.kotlin.plugin.compose")
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.kotlin.serialization)
 }
 
 fun loadRootProperties(fileName: String): Properties =
@@ -19,53 +20,38 @@ val localProperties = loadRootProperties("local.properties")
 val keystoreProperties = loadRootProperties("keystore.properties")
 val debugKeystoreFile = rootProject.file("${System.getProperty("user.home")}/.android/debug.keystore")
 
-fun buildConfigString(name: String, fallback: String = ""): String {
-    val rawValue = providers.environmentVariable(name).orNull
-        ?: dotenvProperties.getProperty(name)
-        ?: localProperties.getProperty(name)
-        ?: fallback
-    val escapedValue = rawValue
-        .replace("\\", "\\\\")
-        .replace("\"", "\\\"")
-    return "\"$escapedValue\""
+/** API keys: local.properties wins, then .env, then env var, then "". Never hardcoded. */
+fun secretField(name: String, vararg aliases: String): String {
+    val names = listOf(name) + aliases
+    var raw: String? = null
+    for (n in names) {
+        raw = localProperties.getProperty(n)
+            ?: dotenvProperties.getProperty(n)
+            ?: providers.environmentVariable(n).orNull
+        if (!raw.isNullOrEmpty()) break
+    }
+    val v = (raw ?: "").replace("\\", "\\\\").replace("\"", "\\\"")
+    return "\"$v\""
 }
 
 android {
-    namespace = "com.guardvoice"
+    namespace = "com.voiceguard"
+    // Spec says 34, but the Compose BOM libraries require compiling against
+    // 35/36 — safest option is compileSdk 36 with targetSdk kept at 34.
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.guardvoice"
-        minSdk = 29
-        targetSdk = 36
-        versionCode = 2
-        versionName = "0.2.0"
+        applicationId = "com.voiceguard"
+        minSdk = 26
+        targetSdk = 34
+        versionCode = 1
+        versionName = "1.0.0"
 
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        buildConfigField("String", "GROQ_API_KEY", buildConfigString("GROQ_API_KEY"))
-        buildConfigField("String", "GROQ_MODEL", buildConfigString("GROQ_MODEL", "openai/gpt-oss-120b"))
-        buildConfigField("String", "DEEPGRAM_API_KEY", run {
-            val v = providers.environmentVariable("DEEPGRAM_API_KEY").orNull
-                ?: providers.environmentVariable("DEEPGRAM_SST").orNull
-                ?: dotenvProperties.getProperty("DEEPGRAM_API_KEY")
-                ?: dotenvProperties.getProperty("DEEPGRAM_SST")
-                ?: localProperties.getProperty("DEEPGRAM_API_KEY")
-                ?: localProperties.getProperty("DEEPGRAM_SST")
-                ?: ""
-            "\"" + v.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+        buildConfigField("String", "DEEPGRAM_API_KEY", secretField("DEEPGRAM_API_KEY", "DEEPGRAM_SST"))
+        buildConfigField("String", "GROQ_API_KEY", secretField("GROQ_API_KEY"))
+        buildConfigField("String", "DEEPGRAM_MODEL", secretField("DEEPGRAM_DEFAULT_MODEL").let {
+            if (it == "\"\"") "\"nova-2\"" else it
         })
-        buildConfigField("String", "DEEPGRAM_SST", run {
-            val v = providers.environmentVariable("DEEPGRAM_SST").orNull
-                ?: providers.environmentVariable("DEEPGRAM_API_KEY").orNull
-                ?: dotenvProperties.getProperty("DEEPGRAM_SST")
-                ?: dotenvProperties.getProperty("DEEPGRAM_API_KEY")
-                ?: localProperties.getProperty("DEEPGRAM_SST")
-                ?: localProperties.getProperty("DEEPGRAM_API_KEY")
-                ?: ""
-            "\"" + v.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
-        })
-        buildConfigField("String", "DEEPGRAM_MODEL", buildConfigString("DEEPGRAM_MODEL", "nova-3"))
-        buildConfigField("String", "BACKEND_WS_URL", buildConfigString("BACKEND_WS_URL", "ws://10.0.2.2:4000/ws/audio-stream"))
     }
 
     signingConfigs {
@@ -77,15 +63,13 @@ android {
                 storePassword = keystoreProperties.getProperty("storePassword").orEmpty()
                 keyAlias = keystoreProperties.getProperty("keyAlias").orEmpty()
                 keyPassword = keystoreProperties.getProperty("keyPassword").orEmpty()
-            } else {
+            } else if (debugKeystoreFile.isFile) {
                 // No release keystore configured — fall back to the local debug key so
                 // assembleRelease still yields an installable APK for direct sharing.
-                if (debugKeystoreFile.isFile) {
-                    storeFile = debugKeystoreFile
-                    storePassword = "android"
-                    keyAlias = "androiddebugkey"
-                    keyPassword = "android"
-                }
+                storeFile = debugKeystoreFile
+                storePassword = "android"
+                keyAlias = "androiddebugkey"
+                keyPassword = "android"
             }
         }
     }
@@ -98,6 +82,7 @@ android {
     buildTypes {
         release {
             signingConfig = signingConfigs.getByName("release")
+            isMinifyEnabled = false
         }
     }
 
@@ -105,7 +90,6 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-
 }
 
 kotlin {
@@ -114,23 +98,25 @@ kotlin {
     }
 }
 
-dependencies {
-    implementation(platform("androidx.compose:compose-bom:2026.05.00"))
-    androidTestImplementation(platform("androidx.compose:compose-bom:2026.05.00"))
+dependencies {    implementation(platform(libs.compose.bom))
+    implementation(libs.compose.ui)
+    implementation(libs.compose.foundation)
+    implementation(libs.compose.material3)
+    implementation(libs.compose.icons.core)
+    implementation(libs.compose.icons.extended)
 
-    implementation("androidx.activity:activity-compose:1.13.0")
-    implementation("androidx.compose.foundation:foundation")
-    implementation("androidx.compose.material3:material3")
-    implementation("androidx.compose.ui:ui")
-    implementation("androidx.compose.ui:ui-tooling-preview")
-    implementation("androidx.core:core-ktx:1.17.0")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.10.0")
+    implementation(libs.activity.compose)
+    implementation(libs.core.ktx)
+    implementation(libs.lifecycle.runtime.compose)
+    implementation(libs.lifecycle.viewmodel.compose)
+    implementation(libs.lifecycle.service)
 
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+    implementation(libs.okhttp)
+    implementation(libs.coroutines.android)
+    implementation(libs.serialization.json)
+    implementation(libs.datastore.preferences)
+    implementation(libs.security.crypto)
+    implementation(libs.timber)
 
-    testImplementation("junit:junit:4.13.2")
-    debugImplementation("androidx.compose.ui:ui-tooling")
-    debugImplementation("androidx.compose.ui:ui-test-manifest")
-    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    testImplementation(libs.junit)
 }

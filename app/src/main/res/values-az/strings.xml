@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">VoiceGuard</string>
+    <string name="mode_listener">Dinləyici</string>
+    <string name="mode_file">Fayl</string>
+    <string name="mode_demo">Demo</string>
+    <string name="start_listening">Dinləməyə başla</string>
+    <string name="stop">Dayandır</string>
+    <string name="simulation_banner">SİMULYASİYA – CANLI SES DEYİL</string>
+    <string name="waiting_for_speech">Nitq gözlənilir – səs səviyyəsi normaldır</string>
+    <string name="no_audio_blocked">Mikrofon səssizlik qaytarır. Zəng zamanı OS tərəfindən bloklanmış ola bilər. İkinci telefonda Dinləyici rejimini və ya Fayl rejimini yoxlayın.</string>
+    <string name="phone_in_call_msg">Bu telefon hazırda zəngdədir. Mikrofon OS tərəfindən bloklanıb. İkinci telefonda Dinləyici rejimindən istifadə edin və ya yazını idxal edin.</string>
+    <string name="no_words_hint">Söz tanınmadı – dil parametrini yoxlayın.</string>
+    <string name="consent_title">Razılıq tələb olunur</string>
+    <string name="consent_text">VoiceGuard zəng səslərini dələduzluqdan qorunmaq üçün təhlil edir. Yalnız emal etmək üçün qanuni hüququnuz olan səsləri, iştirakçıların razılığı ilə təhlil edin.</string>
+    <string name="consent_accept">Başa düşdüm və qəbul edirəm</string>
+</resources>
