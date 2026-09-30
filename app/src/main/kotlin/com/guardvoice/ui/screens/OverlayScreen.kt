@@ -49,11 +49,21 @@ import androidx.compose.ui.platform.LocalContext
 fun OverlayScreen(onNavigate: (AppDestination) -> Unit) {
     val context = LocalContext.current
     val sessions by CallSessionRepository.observe(context).collectAsState()
-    val liveSession = sessions.firstOrNull { it.status == CallSessionStatus.Listening || it.status == CallSessionStatus.Detected }
-        ?: sessions.firstOrNull()
+    // A running demo owns the screen: stale sessions stuck in Listening from
+    // earlier real-call runs must never hijack it (classic "stuck on 0").
+    val demoRunning = com.guardvoice.call.DemoCallEngine.isRunning()
+    val demoSid = if (demoRunning) com.guardvoice.call.DemoCallEngine.activeSessionId() else ""
+    val liveSession = if (demoSid.isNotBlank()) {
+        sessions.firstOrNull { it.id == demoSid } ?: sessions.firstOrNull { it.status == CallSessionStatus.Listening || it.status == CallSessionStatus.Detected }
+    } else {
+        sessions.firstOrNull { it.status == CallSessionStatus.Listening || it.status == CallSessionStatus.Detected }
+    } ?: sessions.firstOrNull()
     val liveAnalysis = liveAnalysisFromSession(liveSession)
     val isLive = liveSession != null && liveSession.status != CallSessionStatus.Completed && liveSession.status != CallSessionStatus.Declined
-    var isTrackingAllowed by rememberSaveable { mutableStateOf(false) }
+    // Demo simulation auto-passes consent in-app (nothing is recorded).
+    // demoRunning is read fresh every composition — never only a remembered flag.
+    var consentGiven by rememberSaveable { mutableStateOf(false) }
+    val isTrackingAllowed = consentGiven || demoRunning
 
     Column(verticalArrangement = Arrangement.spacedBy(GuardSpace.Large)) {
         AppSurface {
@@ -77,8 +87,8 @@ fun OverlayScreen(onNavigate: (AppDestination) -> Unit) {
             isTrackingAllowed = isTrackingAllowed,
             liveAnalysis = liveAnalysis,
             isLive = isLive,
-            onAllowTracking = { isTrackingAllowed = true },
-            onDecline = { isTrackingAllowed = false },
+            onAllowTracking = { consentGiven = true },
+            onDecline = { consentGiven = false },
             onFinish = { onNavigate(AppDestination.Summary) }
         )
     }

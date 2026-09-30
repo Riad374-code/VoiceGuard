@@ -61,6 +61,11 @@ object GeminiLiveStreamClient {
     private val isConnecting = AtomicBoolean(false)
     private var reconnectAttempts = 0
     private val executor: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor()
+    // Dedicated thread for on-device Groq scoring. Groq REST can block 10-90s
+    // on bad networks — running it on CallAudioStream's single STT executor
+    // stalled transcription windows behind scoring and froze the popup on
+    // "Listening" with no transcript updates.
+    private val fallbackScoringExecutor = Executors.newSingleThreadExecutor()
 
     // ---- 5-sec window + 1-sec overlap ----
     // 16kHz * 2 bytes * 5 sec = 160_000 bytes per window
@@ -70,6 +75,14 @@ object GeminiLiveStreamClient {
     private const val STEP_BYTES = WINDOW_BYTES - OVERLAP_BYTES // 128k
     private const val WINDOW_DURATION_MS = 5_000
     private const val BYTES_PER_SEC = 32_000
+    // Minimum words before a transcript is worth an LLM call (mirrors scorer gate).
+    // 4 (not 6): short scam imperatives in Azerbaijani/Turkish ("kodu de!")
+    // carry signal in 2-4 words — gating them out meant zero Groq calls.
+    private const val GROQ_MIN_WORDS = 4
+    // Fast model for the live per-window meter; strong model (BuildConfig
+    // gpt-oss-120b) confirms on finalized 30s windows. Best of both:
+    // sub-second updates + solid multilingual judgment where it matters.
+    private const val FAST_MODEL = "openai/gpt-oss-20b"
 
     // While offline buffer up to 30s (960k) to survive network blips (tunnel/elevator)
     private const val MAX_BUFFERED_WHILE_OFFLINE = 960_000
@@ -83,6 +96,15 @@ object GeminiLiveStreamClient {
     private val fallbackEngine = AccumulativeScoringEngine(windowDurationSec = 30)
     private var fallbackTranscriptAccum: StringBuilder = StringBuilder()
     private var didStartFallback = false
+    // Groq is skipped for <6-word fragments (LLM can't judge them). With faint
+    // audio every 5s window was 1-3 words, so Groq got ZERO requests while
+    // Deepgram minutes accrued. Accumulate fragments until they form context.
+    private val pendingGroqText = StringBuilder()
+    private val groqBufferLock = Any()
+    // fallbackTranscriptAccum is touched from 3 threads (STT executor appends,
+    // WS thread reassigns, scheduled ticker reads) — StringBuilder is not
+    // thread-safe, which garbled persisted transcripts.
+    private val fallbackLock = Any()
 
     private var tickTask: java.util.concurrent.ScheduledFuture<*>? = null
 
@@ -92,7 +114,8 @@ object GeminiLiveStreamClient {
         this.sequence.set(0)
         this.reconnectAttempts = 0
         synchronized(pcmLock) { pendingPcmStream.reset() }
-        this.fallbackTranscriptAccum = StringBuilder()
+        synchronized(fallbackLock) { this.fallbackTranscriptAccum = StringBuilder() }
+        synchronized(groqBufferLock) { pendingGroqText.clear() }
         this.didStartFallback = false
         this.fallbackEngine.start()
         connect()
@@ -107,6 +130,17 @@ object GeminiLiveStreamClient {
         // This guarantees post-hangup history contains last 5s window's score + number.
         val flushSid = sessionId
         flushPendingPcmAsFinal()
+        // Score leftover fragments that never reached GROQ_MIN_WORDS instead of
+        // dropping them — a quiet "ok… bye" tail still feeds the keyword rules
+        // (GroqLlamaScorer falls back to ScamAnalyzer for short text).
+        val leftover = synchronized(groqBufferLock) {
+            val t = pendingGroqText.toString()
+            pendingGroqText.clear()
+            t
+        }
+        if (wordCount(leftover) > 0) {
+            submitImmediateScoring(leftover, FAST_MODEL)
+        }
         // Delay close 3.5s to drain server processing (Deepgram ~800ms + Groq ~600ms) without blocking call-end UX.
         // Overlay/history will update via ACTION_VERDICT_CHANGED even after AudioCaptureService stopped.
         executor.schedule({
@@ -118,7 +152,7 @@ object GeminiLiveStreamClient {
             executor.schedule({
                 if (sessionId == flushSid) {
                     sessionId = ""
-                    fallbackTranscriptAccum.clear()
+                    synchronized(fallbackLock) { fallbackTranscriptAccum.clear() }
                     synchronized(pcmLock) { pendingPcmStream.reset() }
                 }
             }, 2000, TimeUnit.MILLISECONDS)
@@ -355,7 +389,7 @@ object GeminiLiveStreamClient {
         val delta = obj.optString("textDelta")
         val accum = obj.optString("transcriptAccumulated")
         val ctx = appContext ?: return
-        if (accum.isNotBlank()) fallbackTranscriptAccum = StringBuilder(accum)
+        if (accum.isNotBlank()) synchronized(fallbackLock) { fallbackTranscriptAccum = StringBuilder(accum) }
 
         ctx.sendBroadcast(
             Intent(AudioCaptureService.ACTION_TRANSCRIPT_CHANGED)
@@ -383,10 +417,11 @@ object GeminiLiveStreamClient {
             cumScore >= 60 -> CallVerdict.Scam
             cumScore >= 25 -> CallVerdict.Suspicious
             cumScore > 0 -> CallVerdict.Suspicious
-            transcriptWin.trim().split(Regex("\\s+")).count { it.isNotBlank() } >= 6 -> CallVerdict.Safe
+            transcriptWin.trim().split(Regex("\\s+")).count { it.isNotBlank() } >= 4 -> CallVerdict.Safe
             else -> CallVerdict.Pending
         }
         val displayVerdict = if (cumVerdict == CallVerdict.Scam) cumVerdict else verdict // prefer cumulative scam, else window
+        val accumSnapshot = synchronized(fallbackLock) { fallbackTranscriptAccum.toString() }
         val summary = if (reasons.isNotEmpty()) reasons.joinToString(". ") else when (displayVerdict) {
             CallVerdict.Scam -> "Scam patterns detected (window ${obj.optInt("windowIndex", 0) + 1}, active ${cumScore})"
             CallVerdict.Suspicious -> "Suspicious — active ${cumScore} (window ${winScore})"
@@ -400,7 +435,7 @@ object GeminiLiveStreamClient {
             sessionId = sessionId,
             verdict = cumVerdict,
             riskScore = cumScore,
-            transcriptPreview = transcriptWin.ifBlank { obj.optString("transcriptAccumulated", "") }.ifBlank { fallbackTranscriptAccum.toString() },
+            transcriptPreview = transcriptWin.ifBlank { obj.optString("transcriptAccumulated", "") }.ifBlank { accumSnapshot },
             summary = summary,
             reasons = reasons
         )
@@ -408,7 +443,7 @@ object GeminiLiveStreamClient {
             // Per-5s granular history (window score) — lets history show each chunk's spike
             GuardVoiceRepository.getInstance(ctx).insertDetection(
                 sessionId = sessionId,
-                transcript = transcriptWin.ifBlank { fallbackTranscriptAccum.toString() },
+                transcript = transcriptWin.ifBlank { accumSnapshot },
                 verdict = verdict,
                 riskScore = winScore,
                 reasons = reasons,
@@ -453,14 +488,41 @@ object GeminiLiveStreamClient {
 
     fun feedFallbackTranscript(transcript: String) {
         if (transcript.isBlank()) return
-        fallbackTranscriptAccum.append(if (fallbackTranscriptAccum.isEmpty()) transcript else " $transcript")
+        synchronized(fallbackLock) {
+            fallbackTranscriptAccum.append(if (fallbackTranscriptAccum.isEmpty()) transcript else " $transcript")
+        }
         didStartFallback = true
         val snap = fallbackEngine.appendTranscript(transcript)
-        if (snap != null) handleLocalWindow(snap)
+        if (snap != null) {
+            handleLocalWindow(snap)
+            return
+        }
         // Immediate per-5s local scoring so offline UI updates every chunk, not every 30s
         // (fallbackEngine only finalizes every 30s; this keeps 5s granularity per requirement)
-        if (snap == null) handleImmediateLocalTranscript(transcript)
+        // Runs async: Groq REST blocks on network I/O and must never stall the STT thread.
+        // Fragments accumulate until GROQ_MIN_WORDS — scoring 1-3 word windows
+        // individually wasted tokens and was skipped entirely (hence 0 Groq calls).
+        val textToScore: String? = synchronized(groqBufferLock) {
+            pendingGroqText.append(if (pendingGroqText.isEmpty()) transcript else " $transcript")
+            if (wordCount(pendingGroqText) >= GROQ_MIN_WORDS) {
+                val text = pendingGroqText.toString()
+                pendingGroqText.clear()
+                text
+            } else null
+        }
+        if (textToScore != null) submitImmediateScoring(textToScore, FAST_MODEL)
     }
+
+    private fun submitImmediateScoring(text: String, model: String? = null) {
+        try {
+            fallbackScoringExecutor.submit { handleImmediateLocalTranscript(text, model) }
+        } catch (e: Exception) {
+            Log.w(TAG, "Fallback scoring submit failed", e)
+        }
+    }
+
+    private fun wordCount(text: CharSequence): Int =
+        if (text.isBlank()) 0 else text.trim().split(Regex("\\s+")).count { it.isNotBlank() }
 
     private fun handleLocalWindow(snap: AccumulativeScoringEngine.WindowSnapshot) {
         val ctx = appContext ?: return
@@ -486,15 +548,25 @@ object GeminiLiveStreamClient {
                 .putExtra(AudioCaptureService.EXTRA_REASONS, allReasons.toTypedArray())
                 .putExtra(AudioCaptureService.EXTRA_SESSION_ID, sessionId)
         )
+        // Score the finalized 30s window with Groq when it holds real speech.
+        // Covers slow/sparse conversations that never filled the immediate buffer;
+        // the window text already includes any leftover fragments, so clear them.
+        // Uses the strong model (null = configured gpt-oss-120b): this is the
+        // authoritative verdict, while fast 20b drives the live meter above.
+        synchronized(groqBufferLock) { pendingGroqText.clear() }
+        if (wordCount(snap.transcriptWindow) >= GROQ_MIN_WORDS) {
+            submitImmediateScoring(snap.transcriptWindow, null)
+        }
     }
 
     /** Immediate 5s local analysis (offline) — Groq llama scoring with keyword-rule fallback. */
-    private fun handleImmediateLocalTranscript(delta: String) {
+    private fun handleImmediateLocalTranscript(delta: String, model: String? = null) {
         if (isConnected.get()) return // online: WS is source of truth, don't duplicate
         val ctx = appContext ?: return
         // On-device pipeline: Deepgram STT already produced `delta`; score it with Groq llama
         // (falls back to local ScamAnalyzer keyword rules when Groq is unreachable).
-        val immediate = GroqLlamaScorer.score(delta)
+        // model = FAST_MODEL for live windows (sub-second), null (= strong 120b) for 30s windows.
+        val immediate = GroqLlamaScorer.score(delta, model)
         // Update cumulative as monotonic max (mirrors AccumulativeScoringEngine but per-5s)
         val prevCum = fallbackEngine.getCumulativeScore()
         // We piggyback on engine's cumulativeReasons via manual track, but also emit immediate reasons

@@ -36,7 +36,7 @@ fun liveAnalysisFromSession(session: CallSession?): LiveAnalysis =
             riskLevel = riskLevelForVerdict(session.verdict),
             riskScore = session.riskScore,
             transcript = session.transcriptPreview.ifBlank {
-                "No transcript yet. Audio is only counted until AI is connected."
+                "No transcript yet. Speech is analyzed live — needs audible audio and internet."
             },
             reasons = session.reasons
         )

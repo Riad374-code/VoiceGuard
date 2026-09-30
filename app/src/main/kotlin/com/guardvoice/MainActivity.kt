@@ -200,7 +200,8 @@ class MainActivity : ComponentActivity() {
         ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
 
     private fun hasPhonePermissions(): Boolean =
-        hasPermission(Manifest.permission.READ_PHONE_STATE)
+        hasPermission(Manifest.permission.READ_PHONE_STATE) &&
+            hasPermission(Manifest.permission.READ_CALL_LOG)
 
     private fun hasCallScreeningRole(): Boolean {
         val roleManager = getSystemService(RoleManager::class.java)
@@ -273,6 +274,7 @@ private fun runtimePermissions(): Array<String> =
     buildList {
         add(Manifest.permission.RECORD_AUDIO)
         add(Manifest.permission.READ_PHONE_STATE)
+        add(Manifest.permission.READ_CALL_LOG)
         add(Manifest.permission.READ_CONTACTS)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             add(Manifest.permission.POST_NOTIFICATIONS)

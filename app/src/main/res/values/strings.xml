@@ -6,6 +6,7 @@
     <string name="overlay_badge">GuardVoice check</string>
     <string name="overlay_consent_title">Allow voice tracking for this call?</string>
     <string name="overlay_body">Tracking starts only if you allow it. The app may switch to speaker so both sides can be analyzed.</string>
+    <string name="overlay_body_with_number">Tracking for %1$s starts only if you allow it. The app may switch to speaker so both sides can be analyzed.</string>
     <string name="overlay_title">Incoming caller</string>
     <string name="overlay_waiting_for_consent">Waiting for consent</string>
     <string name="overlay_starting_capture">Turning on speaker and microphone...</string>
@@ -22,7 +23,13 @@
     <string name="popup_fallback_notification_title">GuardVoice popup blocked</string>
     <string name="overlay_audio_warning">Audio issue detected</string>
     <string name="overlay_no_voice">No voice detected from microphone. Speaker may be muted or microphone unavailable.</string>
+    <string name="overlay_heard_unrecognized">Heard sound but couldn\'t recognize speech. Speak loudly near the phone — needs internet, listening continues.</string>
+    <string name="overlay_minimize">Minimize popup</string>
+    <string name="overlay_restore">Tap to bring back the call popup. Tracking keeps running.</string>
+    <string name="overlay_badge_demo">Demo simulation</string>
+    <string name="overlay_demo_starting">Demo starting — scripted scam call playing…</string>
     <string name="overlay_low_volume">Audio level too low. Move closer to microphone or check if it is blocked.</string>
+    <string name="overlay_stt_error">Couldn\'t reach the transcription server. Check internet — listening continues.</string>
     <string name="audio_health_notification_channel">GuardVoice audio alerts</string>
     <string name="audio_health_notification_title">GuardVoice audio issue</string>
 </resources>

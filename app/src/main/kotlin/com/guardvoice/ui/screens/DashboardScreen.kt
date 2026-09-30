@@ -25,6 +25,7 @@ import com.guardvoice.data.CallSessionStatus
 import com.guardvoice.ui.components.AppSurface
 import com.guardvoice.ui.components.BreathingWave
 import com.guardvoice.ui.components.PrimaryAction
+import com.guardvoice.ui.components.SecondaryAction
 import com.guardvoice.ui.components.SectionLabel
 import com.guardvoice.ui.components.SmallDivider
 import com.guardvoice.ui.components.StatusPill
@@ -63,6 +64,14 @@ fun DashboardScreen(onNavigate: (AppDestination) -> Unit) {
                     modifier = Modifier.fillMaxWidth(),
                     text = "Preview call popup",
                     onClick = { onNavigate(AppDestination.Overlay) }
+                )
+                SecondaryAction(
+                    modifier = Modifier.fillMaxWidth(),
+                    text = "Simulate scam call (demo)",
+                    onClick = {
+                        com.guardvoice.call.DemoCallEngine.start(context, showOverlay = true)
+                        onNavigate(AppDestination.Overlay)
+                    }
                 )
             }
         }

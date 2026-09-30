@@ -92,6 +92,16 @@ object AndroidDeviceCompatibility {
                 )
             )
             DeviceFamily.HonorHuawei -> listOf(
+                // Honor (independent MagicOS) uses com.honor.* — Huawei entries
+                // below stay as fallback for actual Huawei devices.
+                componentIntent(
+                    "com.honor.systemmanager",
+                    "com.honor.systemmanager.startupmgr.ui.StartupNormalAppListActivity"
+                ),
+                componentIntent(
+                    "com.honor.systemmanager",
+                    "com.honor.systemmanager.optimize.process.ProtectActivity"
+                ),
                 componentIntent(
                     "com.huawei.systemmanager",
                     "com.huawei.systemmanager.startupmgr.ui.StartupNormalAppListActivity"

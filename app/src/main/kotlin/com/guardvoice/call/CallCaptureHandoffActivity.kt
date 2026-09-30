@@ -47,7 +47,7 @@ class CallCaptureHandoffActivity : Activity() {
         val sessionId = intent.getStringExtra(EXTRA_SESSION_ID).orEmpty()
         try {
             AudioCaptureService.start(this, phoneNumber, sessionId)
-        } catch (exception: RuntimeException) {
+        } catch (exception: Exception) {
             Log.e(TAG, "Could not hand off to microphone capture service.", exception)
             CallSessionRepository.markFailed(
                 this,

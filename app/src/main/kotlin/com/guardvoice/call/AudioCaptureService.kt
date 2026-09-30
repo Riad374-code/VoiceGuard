@@ -15,9 +15,7 @@ import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.MediaRecorder
-import android.media.audiofx.AcousticEchoCanceler
 import android.media.audiofx.AutomaticGainControl
-import android.media.audiofx.NoiseSuppressor
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
@@ -42,15 +40,25 @@ class AudioCaptureService : Service() {
     private var previousAudioMode = AudioManager.MODE_NORMAL
     private var wasSpeakerphoneOn = false
     private var activeSessionId = ""
-    // Hardware audio effects — recommended when using VOICE_COMMUNICATION, enabled once per call
-    private var noiseSuppressor: NoiseSuppressor? = null
-    private var echoCanceler: AcousticEchoCanceler? = null
+    // Hardware audio effect — AGC only, enabled once per call.
+    // NO AcousticEchoCanceler and NO NoiseSuppressor, deliberately:
+    // the far-end voice coming out of the speaker IS our signal (speaker-call
+    // capture). AEC's entire job is subtracting speaker output from the mic —
+    // it was erasing the opposite side's voice even at full volume. NS eats
+    // faint bleed as "background noise" for the same reason.
     private var gainControl: AutomaticGainControl? = null
     private val progressLock = Any()
     private var pendingAudioBytes = 0L
     private var pendingAudioChunks = 0
     private var lowVolumeChunkCount = 0
     private var didSendLowVolumeAlert = false
+    // ---- Mic-source resilience (Redmi/MIUI mutes VOICE_COMMUNICATION in calls) ----
+    // If the active source delivers no usable voice for ~15s, rotate to the next
+    // source in the chain. A quiet room looks the same, so rotations are capped
+    // per call — harmless there, potentially rescuing on muted-by-OS devices.
+    private var activeAudioSource = MediaRecorder.AudioSource.MIC
+    private var silenceChunkCount = 0
+    private var sourceRotations = 0
 
     @Volatile
     private var isCaptureRunning = false
@@ -84,6 +92,12 @@ class AudioCaptureService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     private fun startCapture(phoneNumber: String, sessionId: String) {
+        // Call-waiting / second SIM while running: stop the old session first so
+        // the new call's audio isn't attributed to the stale session id.
+        // (Outside captureLock — stopCapture joins the capture thread.)
+        if (isCaptureRunning && sessionId != activeSessionId) {
+            stopCapture()
+        }
         activeSessionId = sessionId
         if (!hasAudioPermission()) {
             CallSessionRepository.markFailed(
@@ -103,7 +117,7 @@ class AudioCaptureService : Service() {
                 }
                 startForegroundCapture(phoneNumber)
                 activateSpeakerMode()
-                val recorder = buildRecorder() ?: run {
+                val recorder = buildRecorderWithFallback() ?: run {
                     restoreAudioMode()
                     stopForeground(STOP_FOREGROUND_REMOVE)
                     CallSessionRepository.markFailed(
@@ -116,15 +130,24 @@ class AudioCaptureService : Service() {
                     return
                 }
                 activeRecorder = recorder
-                // ---- Audio cleaning (recommended): enable hardware AEC/NS/AGC once per call ----
-                // VOICE_COMMUNICATION enables OS-level processing, but explicit enable guarantees
-                // noise suppression + echo cancellation on devices where they are available.
+                // ---- Audio cleaning: hardware AGC only (see field note) ----
+                // AEC/NS are off: they erase the speaker-side voice we capture.
                 enableAudioEffects(recorder.audioSessionId)
                 isCaptureRunning = true
+                // Fresh per-call state — the service instance survives across calls,
+                // so stale volume counters must not leak into the next call.
+                lowVolumeChunkCount = 0
+                didSendLowVolumeAlert = false
+                silenceChunkCount = 0
+                sourceRotations = 0
+                activeSampleRateHz = SAMPLE_RATE_HZ
+                micDiagRms = 0.0
+                micDiagMaxRms = 0.0
+                micDiagRecentMaxRms = 0.0
                 CallAudioStream.init(this, activeSessionId)
                 // Start streaming to Deepgram+Groq proxy — 5-sec windows with 1-sec overlap.
                 // Voice is Buffered to 5s windows (only 1s overlap kept in RAM, raw PCM discarded post-send).
-                // Backend DeepgramGroqProxy streams transcription + Groq llama-3.1-8b-instant scoring per window,
+                // Backend DeepgramGroqProxy streams transcription + Groq gpt-oss scoring per window,
                 // active cumulative score kept via AccumulativeScoringEngine and persisted to history.
                 try { GeminiLiveStreamClient.start(this, activeSessionId) } catch (e: Exception) { Log.w(TAG, "Deepgram/Groq stream start failed, will use local fallback", e) }
                 captureThread = Thread({ captureLoop(recorder) }, "GuardVoiceAudioCapture").apply {
@@ -181,7 +204,8 @@ class AudioCaptureService : Service() {
         stopForeground(STOP_FOREGROUND_REMOVE)
     }
 
-    private fun captureLoop(recorder: AudioRecord) {
+    private fun captureLoop(initialRecorder: AudioRecord) {
+        var recorder = initialRecorder
         var didFail = false
         try {
             recorder.startRecording()
@@ -202,15 +226,47 @@ class AudioCaptureService : Service() {
                     try { GeminiLiveStreamClient.sendPcmChunk(chunk) } catch (_: Exception) {}
                     recordAudioProgress(bytesRead)
                     // Use cleaned chunk for volume check — reflects what Gemini actually receives.
-                    evaluateVolumeLevel(chunk, chunk.size)
+                    val rms = evaluateVolumeLevel(chunk, chunk.size)
+                    micDiagRms = rms
+                    if (rms > micDiagMaxRms) micDiagMaxRms = rms
+                    if (rms > micDiagRecentMaxRms) micDiagRecentMaxRms = rms
+                    // Quiet-stream watchdog: a muted-by-OS mic (Redmi in-call)
+                    // reads silence forever. Rotate the audio source to recover.
+                    if (rms < SILENCE_RMS_THRESHOLD) {
+                        silenceChunkCount++
+                        if (silenceChunkCount >= SILENCE_CHUNKS_BEFORE_ROTATE &&
+                            sourceRotations < MAX_SOURCE_ROTATIONS && isCaptureRunning
+                        ) {
+                            silenceChunkCount = 0
+                            rotateAudioSource(recorder)?.let { rotated ->
+                                recorder = rotated
+                            }
+                        }
+                    } else {
+                        silenceChunkCount = 0
+                    }
                 } else if (bytesRead < 0) {
                     Log.w(TAG, "AudioRecord read failed with code $bytesRead.")
                     didFail = true
                     break
+                } else {
+                    // bytesRead == 0: HAL delivered nothing — sleep instead of
+                    // busy-spinning and burning battery.
+                    try {
+                        Thread.sleep(10)
+                    } catch (_: InterruptedException) {
+                        break
+                    }
                 }
             }
         } catch (exception: IllegalStateException) {
             Log.e(TAG, "Audio capture could not start.", exception)
+            didFail = true
+        } catch (e: RuntimeException) {
+            // read()/accept() can throw IllegalArgumentException / SecurityException
+            // (mic revoked mid-call on MIUI) on hostile HALs. Fail loudly with a
+            // Failed broadcast instead of dying silent with "Listening" stuck on.
+            Log.e(TAG, "Audio capture loop failed.", e)
             didFail = true
         } finally {
             if (didFail && isCaptureRunning) {
@@ -219,32 +275,98 @@ class AudioCaptureService : Service() {
         }
     }
 
-    private fun evaluateVolumeLevel(buffer: ByteArray, bytesRead: Int) {
-        if (didSendLowVolumeAlert) return
-        var sumSq = 0L
-        for (i in 0 until bytesRead step 2) {
-            val sample = ((buffer[i + 1].toInt() and 0xFF) shl 8) or (buffer[i].toInt() and 0xFF)
-            val normalized = sample.toShort().toInt()
-            sumSq += normalized * normalized
+    /**
+     * Hot-swap to the next audio source in the chain when the current one
+     * delivers only digital silence (muted by OS). Builds the replacement
+     * BEFORE touching the live recorder so a failed probe keeps audio flowing.
+     */
+    private fun rotateAudioSource(old: AudioRecord): AudioRecord? {
+        val chain = AUDIO_SOURCE_CHAIN
+        val nextSource = chain[(chain.indexOf(activeAudioSource) + 1) % chain.size]
+        val replacement = try {
+            // Probe at the working rate first — if startup fell back to 44.1/8k,
+            // a 16 kHz probe here would fail and burn a rotation for nothing.
+            buildRecorder(nextSource, activeSampleRateHz)
+        } catch (e: Exception) {
+            Log.w(TAG, "Source rotation probe failed for $nextSource", e)
+            null
+        } ?: return null
+        try {
+            replacement.startRecording()
+        } catch (e: IllegalStateException) {
+            Log.w(TAG, "Rotated recorder could not start (source=$nextSource)", e)
+            replacement.releaseSafely()
+            return null
         }
-        val rms = kotlin.math.sqrt(sumSq.toDouble() / (bytesRead / 2))
+        synchronized(captureLock) {
+            if (activeRecorder == old) {
+                activeRecorder = replacement
+            } else {
+                // stopCapture() won the race (call ended mid-rotation) — release
+                // the probe instead of orphaning it with the mic held open.
+                replacement.releaseSafely()
+                return null
+            }
+        }
+        // Stop/release OUTSIDE the lock: AudioRecord.stop() can block, and
+        // stopCapture() must never stall behind a rotation during hangup.
+        try { old.stop() } catch (_: IllegalStateException) {}
+        try { old.release() } catch (_: Exception) {}
+        releaseAudioEffects()
+        enableAudioEffects(replacement.audioSessionId)
+        activeAudioSource = nextSource
+        sourceRotations++
+        // Keep the non-16k rate suffix (set at startup) — without it a
+        // rotated label hides the rate Deepgram windows are labeled with.
+        val rateSuffix = if (activeSampleRateHz != 16_000) "@${activeSampleRateHz / 1000}k" else ""
+        micDiagLabel = "${sourceLabel(nextSource)}#$sourceRotations$rateSuffix"
+        Log.i(TAG, "Rotated audio source to $nextSource (rotation #$sourceRotations)")
+        return replacement
+    }
+
+    private fun sourceLabel(source: Int): String = when (source) {
+        MediaRecorder.AudioSource.MIC -> "MIC"
+        MediaRecorder.AudioSource.VOICE_COMMUNICATION -> "VOICECOMM"
+        MediaRecorder.AudioSource.VOICE_RECOGNITION -> "VOICEREC"
+        MediaRecorder.AudioSource.UNPROCESSED -> "UNPROC"
+        MediaRecorder.AudioSource.CAMCORDER -> "CAM"
+        else -> "SRC$source"
+    }
+
+    private fun evaluateVolumeLevel(buffer: ByteArray, bytesRead: Int): Double {
+        val rms = rmsOfPcm16(buffer, bytesRead)
+        if (didSendLowVolumeAlert) return rms
         if (rms < LOW_VOLUME_RMS_THRESHOLD) {
             lowVolumeChunkCount++
             if (lowVolumeChunkCount >= LOW_VOLUME_CHUNK_THRESHOLD && !didSendLowVolumeAlert) {
                 didSendLowVolumeAlert = true
                 val ctx = applicationContext
-                val msg = ctx.getString(R.string.overlay_low_volume)
+                val msg = ctx.getString(R.string.overlay_low_volume) + " " + micDiag()
                 ctx.sendBroadcast(
                     Intent(ACTION_AUDIO_HEALTH_ALERT)
                         .setPackage(ctx.packageName)
                         .putExtra(EXTRA_HEALTH_ALERT_TYPE, HEALTH_ALERT_LOW_VOLUME)
                         .putExtra(EXTRA_HEALTH_ALERT_MESSAGE, msg)
                 )
-                CallFallbackNotifier.showAudioHealthAlert(ctx, msg)
+                // Overlay hint only — a heads-up notification for quiet audio
+                // spams the user during normal pauses in conversation.
             }
         } else {
             lowVolumeChunkCount = 0
         }
+        return rms
+    }
+
+    private fun rmsOfPcm16(buffer: ByteArray, bytesRead: Int): Double {
+        if (bytesRead < 2) return 0.0
+        var sumSq = 0L
+        // Bound at bytesRead - 1: buffer[i + 1] must stay in range on odd sizes.
+        for (i in 0 until bytesRead - 1 step 2) {
+            val sample = ((buffer[i + 1].toInt() and 0xFF) shl 8) or (buffer[i].toInt() and 0xFF)
+            val normalized = sample.toShort().toInt()
+            sumSq += normalized * normalized
+        }
+        return kotlin.math.sqrt(sumSq.toDouble() / (bytesRead / 2))
     }
 
     private fun cleanupFailedCapture(recorder: AudioRecord) {
@@ -299,9 +421,36 @@ class AudioCaptureService : Service() {
         )
     }
 
-    private fun buildRecorder(): AudioRecord? {
+    /**
+     * Tries each (rate, source) until one initializes. 16 kHz is preferred
+     * (downstream windows assume it), but some devices/HALs lack 16 kHz on
+     * every source — 44.1/8 kHz with an honest WAV header still transcribes.
+     */
+    private fun buildRecorderWithFallback(): AudioRecord? {
+        for (rate in SAMPLE_RATE_CHAIN) {
+            for (source in AUDIO_SOURCE_CHAIN) {
+                val recorder = try {
+                    buildRecorder(source, rate)
+                } catch (e: Exception) {
+                    Log.w(TAG, "AudioRecord probe crashed for source=$source rate=$rate", e)
+                    null
+                }
+                if (recorder != null) {
+                    activeAudioSource = source
+                    activeSampleRateHz = rate
+                    micDiagLabel = sourceLabel(source) + if (rate != 16_000) "@${rate / 1000}k" else ""
+                    Log.i(TAG, "AudioRecord initialized with source=$source rate=$rate")
+                    return recorder
+                }
+                Log.w(TAG, "AudioRecord source=$source rate=$rate unavailable, trying next.")
+            }
+        }
+        return null
+    }
+
+    private fun buildRecorder(audioSource: Int = MediaRecorder.AudioSource.VOICE_COMMUNICATION, sampleRate: Int = SAMPLE_RATE_HZ): AudioRecord? {
         val minBufferSize = AudioRecord.getMinBufferSize(
-            SAMPLE_RATE_HZ,
+            sampleRate,
             AudioFormat.CHANNEL_IN_MONO,
             AudioFormat.ENCODING_PCM_16BIT
         )
@@ -310,38 +459,27 @@ class AudioCaptureService : Service() {
         }
         val bufferSize = maxOf(minBufferSize, AUDIO_BUFFER_BYTES)
         val audioFormat = AudioFormat.Builder()
-            .setSampleRate(SAMPLE_RATE_HZ)
+            .setSampleRate(sampleRate)
             .setChannelMask(AudioFormat.CHANNEL_IN_MONO)
             .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
             .build()
 
         return try {
             AudioRecord.Builder()
-                .setAudioSource(MediaRecorder.AudioSource.VOICE_COMMUNICATION)
+                .setAudioSource(audioSource)
                 .setAudioFormat(audioFormat)
                 .setBufferSizeInBytes(bufferSize)
                 .build()
                 .takeIf { it.state == AudioRecord.STATE_INITIALIZED }
         } catch (exception: RuntimeException) {
-            Log.e(TAG, "AudioRecord initialization failed.", exception)
+            Log.e(TAG, "AudioRecord initialization failed (source=$audioSource).", exception)
             null
         }
     }
 
     // ---- Audio cleaning helpers (recommended) ----
+    // AGC only (see field note: AEC/NS would erase the speaker-side voice).
     private fun enableAudioEffects(audioSessionId: Int) {
-        try {
-            if (NoiseSuppressor.isAvailable()) {
-                noiseSuppressor = NoiseSuppressor.create(audioSessionId)?.also { if (!it.enabled) it.enabled = true }
-                Log.i(TAG, "NoiseSuppressor enabled=${noiseSuppressor?.enabled} session=$audioSessionId")
-            }
-        } catch (e: Exception) { Log.w(TAG, "NoiseSuppressor enable failed", e) }
-        try {
-            if (AcousticEchoCanceler.isAvailable()) {
-                echoCanceler = AcousticEchoCanceler.create(audioSessionId)?.also { if (!it.enabled) it.enabled = true }
-                Log.i(TAG, "AcousticEchoCanceler enabled=${echoCanceler?.enabled}")
-            }
-        } catch (e: Exception) { Log.w(TAG, "AEC enable failed", e) }
         try {
             if (AutomaticGainControl.isAvailable()) {
                 gainControl = AutomaticGainControl.create(audioSessionId)?.also { if (!it.enabled) it.enabled = true }
@@ -351,10 +489,8 @@ class AudioCaptureService : Service() {
     }
 
     private fun releaseAudioEffects() {
-        try { noiseSuppressor?.release() } catch (_: Exception) {}
-        try { echoCanceler?.release() } catch (_: Exception) {}
         try { gainControl?.release() } catch (_: Exception) {}
-        noiseSuppressor = null; echoCanceler = null; gainControl = null
+        gainControl = null
     }
 
     /**
@@ -395,6 +531,14 @@ class AudioCaptureService : Service() {
     private fun activateSpeakerMode() {
         previousAudioMode = audioManager.mode
         wasSpeakerphoneOn = audioManager.isSpeakerphoneOn
+        // During a real cellular call the system owns the voice path (MODE_IN_CALL).
+        // Forcing MODE_IN_COMMUNICATION there mutes third-party capture on
+        // MIUI/HyperOS (Redmi) — so only turn the speaker on, never touch the mode.
+        if (previousAudioMode == AudioManager.MODE_IN_CALL) {
+            audioManager.isSpeakerphoneOn = true
+            Log.i(TAG, "Cellular call active; speaker forced, telephony audio mode untouched.")
+            return
+        }
         audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             val speaker = audioManager.availableCommunicationDevices
@@ -523,8 +667,58 @@ class AudioCaptureService : Service() {
         const val EXTRA_HEALTH_ALERT_MESSAGE = "extra_health_alert_message"
         const val HEALTH_ALERT_NO_VOICE = "no_voice"
         const val HEALTH_ALERT_LOW_VOLUME = "low_volume"
+        const val HEALTH_ALERT_STT_ERROR = "stt_error"
+        // Field diagnostics: current mic source label + last measured RMS level.
+        // Appended to audio hints so testers can report them (no logcat needed).
+        @Volatile var micDiagLabel: String = "?"
+        @Volatile var micDiagRms: Double = 0.0
+        // Loudest chunk this call — distinguishes "mic hears nothing, ever"
+        // (max=0 through loud speech = OS/hardware mute) from "quiet right now".
+        @Volatile var micDiagMaxRms: Double = 0.0
+        // Loudest chunk since the last no-voice hint was emitted. Lets the
+        // hint say "heard sound but couldn't recognize it" (STT/network side)
+        // vs "microphone unavailable" (capture side) instead of one blanket
+        // message that misleads in both directions.
+        @Volatile var micDiagRecentMaxRms: Double = 0.0
+
+        fun micDiag(): String = "($micDiagLabel lvl=${micDiagRms.toInt()} max=${micDiagMaxRms.toInt()})"
+
+        /** Returns the recent max and resets it — one verdict per hint period. */
+        fun consumeRecentMaxRms(): Double {
+            val v = micDiagRecentMaxRms
+            micDiagRecentMaxRms = 0.0
+            return v
+        }
         private const val LOW_VOLUME_RMS_THRESHOLD = 30.0
-        private const val LOW_VOLUME_CHUNK_THRESHOLD = 10
+        // 50 x 100ms chunks ≈ 5s of continuous near-silence. 1s (10 chunks)
+        // fired during normal conversation pauses and spammed notifications.
+        private const val LOW_VOLUME_CHUNK_THRESHOLD = 50
+        // Quiet-stream watchdog: RMS < 30 for ~15s straight means the mic hears
+        // no usable voice (muted by OS, or hardware AEC residue). Rotate the
+        // audio source to try to recover. Capped per call — harmless in a
+        // genuinely quiet room, potentially rescuing on hostile devices.
+        // (Threshold intentionally equals the low-volume level: faint residue
+        // that Deepgram can't transcribe is as useless as zeros.)
+        private const val SILENCE_RMS_THRESHOLD = 30.0
+        private const val SILENCE_CHUNKS_BEFORE_ROTATE = 150
+        private const val MAX_SOURCE_ROTATIONS = 3
+        private val AUDIO_SOURCE_CHAIN = intArrayOf(
+            // MIC first: raw room audio with no built-in voice processing.
+            // VOICE_COMMUNICATION runs hardware AEC/NS that erases speaker bleed;
+            // it stays as fallback, not default. UNPROCESSED is rawest but
+            // unsupported on many devices (probe skips it automatically).
+            MediaRecorder.AudioSource.MIC,
+            MediaRecorder.AudioSource.VOICE_COMMUNICATION,
+            MediaRecorder.AudioSource.VOICE_RECOGNITION,
+            MediaRecorder.AudioSource.UNPROCESSED,
+            MediaRecorder.AudioSource.CAMCORDER
+        )
+        // 16 kHz first (downstream 5s-window math assumes it); 44.1/8 kHz only
+        // as last resorts — window timing drifts but audio flows and the WAV
+        // header carries the true rate so Deepgram still transcribes.
+        private val SAMPLE_RATE_CHAIN = intArrayOf(16_000, 44_100, 8_000)
+        // Actual rate of the live recorder; STT uses it for the WAV header.
+        @Volatile var activeSampleRateHz: Int = 16_000
         private const val ACTION_START = "com.guardvoice.action.START_CAPTURE"
         private const val ACTION_STOP = "com.guardvoice.action.STOP_CAPTURE"
         private const val EXTRA_PHONE_NUMBER = "extra_phone_number"

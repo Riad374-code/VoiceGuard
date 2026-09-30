@@ -112,7 +112,7 @@ private fun SessionResultPanel(session: CallSession) {
         )
         Text(
             text = session.transcriptPreview.ifBlank {
-                "No transcript yet. The app saved the call session and audio progress; AI processing is intentionally skipped for now."
+                "No transcript yet — no speech reached transcription. Check: speaker on with volume up, talk near the mic, and internet on for analysis."
             },
             style = MaterialTheme.typography.bodyMedium,
             color = GuardColors.InkMuted

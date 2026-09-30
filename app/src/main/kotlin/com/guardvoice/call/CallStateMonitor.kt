@@ -17,8 +17,15 @@ internal class CallStateMonitor(
     private val telephonyManager = context.getSystemService(TelephonyManager::class.java)
     private var telephonyCallback: TelephonyCallback? = null
     private var phoneStateListener: PhoneStateListener? = null
+    // Guard against the registration-time snapshot: Android immediately delivers
+    // the *current* state on register, which on some OEMs (Honor/MagicOS, dual
+    // SIM) is still IDLE while the call is ringing. Acting on that kills the
+    // popup the instant it appears. Only an IDLE that follows an observed
+    // RINGING/OFFHOOK counts as call end.
+    private var sawNonIdleState = false
 
     fun start() {
+        sawNonIdleState = false
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 startTelephonyCallback()
@@ -50,12 +57,18 @@ internal class CallStateMonitor(
         }
     }
 
+    private fun onStateChanged(state: Int) {
+        if (state == TelephonyManager.CALL_STATE_IDLE) {
+            if (sawNonIdleState) onCallIdle()
+        } else {
+            sawNonIdleState = true
+        }
+    }
+
     private fun startTelephonyCallback() {
         val callback = object : TelephonyCallback(), TelephonyCallback.CallStateListener {
             override fun onCallStateChanged(state: Int) {
-                if (state == TelephonyManager.CALL_STATE_IDLE) {
-                    onCallIdle()
-                }
+                onStateChanged(state)
             }
         }
         telephonyManager.registerTelephonyCallback(
@@ -70,9 +83,7 @@ internal class CallStateMonitor(
         val listener = object : PhoneStateListener() {
             @Suppress("OVERRIDE_DEPRECATION")
             override fun onCallStateChanged(state: Int, phoneNumber: String?) {
-                if (state == TelephonyManager.CALL_STATE_IDLE) {
-                    onCallIdle()
-                }
+                onStateChanged(state)
             }
         }
         telephonyManager.listen(listener, PhoneStateListener.LISTEN_CALL_STATE)

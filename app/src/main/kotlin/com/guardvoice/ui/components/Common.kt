@@ -255,9 +255,9 @@ fun TranscriptLine(text: String, modifier: Modifier = Modifier) {
     ) {
         Text(
             text = text,
-            style = MaterialTheme.typography.bodyMedium,
+            style = MaterialTheme.typography.bodyLarge,
             color = GuardColors.Ink,
-            maxLines = 4,
+            maxLines = 6,
             overflow = TextOverflow.Ellipsis
         )
     }

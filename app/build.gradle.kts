@@ -43,7 +43,7 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "GROQ_API_KEY", buildConfigString("GROQ_API_KEY"))
-        buildConfigField("String", "GROQ_MODEL", buildConfigString("GROQ_MODEL", "llama-3.1-8b-instant"))
+        buildConfigField("String", "GROQ_MODEL", buildConfigString("GROQ_MODEL", "openai/gpt-oss-120b"))
         buildConfigField("String", "DEEPGRAM_API_KEY", run {
             val v = providers.environmentVariable("DEEPGRAM_API_KEY").orNull
                 ?: providers.environmentVariable("DEEPGRAM_SST").orNull

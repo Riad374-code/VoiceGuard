@@ -21,11 +21,17 @@ class IncomingPhoneStateDecisionTest {
     }
 
     @Test
-    fun `ignores off hook and missing states`() {
+    fun `shows popup on off hook when ringing was missed`() {
+        // OFFHOOK = answered/active call with no tracked RINGING (dead process,
+        // fast answer, dual-SIM). The receiver narrows this to incoming numbers.
         assertEquals(
-            IncomingPhoneStateAction.Ignore,
+            IncomingPhoneStateAction.ShowPopupIfNoActiveCall,
             incomingPhoneStateActionFor("OFFHOOK")
         )
+    }
+
+    @Test
+    fun `ignores missing states`() {
         assertEquals(
             IncomingPhoneStateAction.Ignore,
             incomingPhoneStateActionFor(null)

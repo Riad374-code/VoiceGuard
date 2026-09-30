@@ -53,6 +53,8 @@ internal object IncomingCallOverlayCoordinator {
         }
     }
 
+    fun hasActiveCall(): Boolean = synchronized(lock) { activeCall != null }
+
     private data class ActiveIncomingCall(
         val sessionId: String,
         val phoneNumber: String,
@@ -90,7 +92,8 @@ internal object IncomingCallOverlayCoordinator {
 
     private fun markPopupUnavailable(context: Context, sessionId: String, reason: String) {
         CallSessionRepository.markFailed(context, sessionId, reason)
-        CallFallbackNotifier.showPopupUnavailable(context, reason)
+        val number = synchronized(lock) { activeCall?.phoneNumber.orEmpty() }
+        CallFallbackNotifier.showPopupUnavailable(context, reason, number)
     }
 
     private const val TAG = "IncomingCallOverlay"

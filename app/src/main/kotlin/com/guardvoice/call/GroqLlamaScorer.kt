@@ -13,15 +13,16 @@ import java.net.URL
  * On-device scam scoring via the Groq OpenAI-compatible chat API
  * (mirrors backend GroqAnalyzer.ts).
  *
- * Model chain: BuildConfig.GROQ_MODEL -> openai/gpt-oss-20b -> openai/gpt-oss-120b
- *   -> llama-3.3-70b-versatile -> local ScamAnalyzer keyword fallback.
+ * Model chain (verified live on Groq 2026-09-28; Llama 3.1/3.3 retired):
+ * preferred model (or BuildConfig.GROQ_MODEL, default openai/gpt-oss-120b)
+ *   -> openai/gpt-oss-20b -> qwen/qwen3.8-27b -> local ScamAnalyzer fallback.
  *
  * Blocking network call — must run on a background thread (CallAudioStream executor).
  */
 object GroqLlamaScorer {
     private const val API_URL = "https://api.groq.com/openai/v1/chat/completions"
     private const val TAG = "GroqLlamaScorer"
-    private const val MIN_WORDS_FOR_LLM = 6
+    private const val MIN_WORDS_FOR_LLM = 4
 
     data class LlamaVerdict(
         val verdict: CallVerdict,
@@ -30,15 +31,21 @@ object GroqLlamaScorer {
         val keywords: List<String>
     )
 
-    fun score(transcript: String): LlamaVerdict {
+    fun score(transcript: String, preferredModel: String? = null): LlamaVerdict {
         val trimmed = transcript.trim()
         val apiKey = try { BuildConfig.GROQ_API_KEY.trim() } catch (_: Exception) { "" }
         // Fast path (mirrors backend): very short utterances score locally, no tokens spent.
         if (apiKey.isBlank() || wordCount(trimmed) < MIN_WORDS_FOR_LLM) {
             return localFallback(trimmed)
         }
-        val primary = try { BuildConfig.GROQ_MODEL.ifBlank { "llama-3.1-8b-instant" } } catch (_: Exception) { "llama-3.1-8b-instant" }
-        val models = listOf(primary, "openai/gpt-oss-20b", "openai/gpt-oss-120b", "llama-3.3-70b-versatile").distinct()
+        val configured = try { BuildConfig.GROQ_MODEL.ifBlank { "openai/gpt-oss-120b" } } catch (_: Exception) { "openai/gpt-oss-120b" }
+        val primary = preferredModel?.ifBlank { null } ?: configured
+        // Fast 20b first for live windows, strong 120b for authoritative windows —
+        // distinct() keeps whichever is primary, other becomes first fallback.
+        // Capped at 2 attempts: reasoning models are slow, and every model past
+        // the first burns another full timeout on the single scoring thread
+        // (4 models x ~23s stalled the live meter minutes behind the call).
+        val models = listOf(primary, "openai/gpt-oss-20b", "openai/gpt-oss-120b", "qwen/qwen3.8-27b").distinct().take(2)
         var lastError = ""
         for (model in models) {
             try {
@@ -81,9 +88,23 @@ object GroqLlamaScorer {
             connection.requestMethod = "POST"
             connection.setRequestProperty("Authorization", "Bearer $apiKey")
             connection.setRequestProperty("Content-Type", "application/json")
+            // Browser-like UA: Groq sits behind Cloudflare bot rules that 403
+            // non-browser clients (verified 2026-09-28, error 1010 vs Java UA).
+            connection.setRequestProperty(
+                "User-Agent",
+                "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36"
+            )
             connection.doOutput = true
-            connection.connectTimeout = 8_000
-            connection.readTimeout = 15_000
+            // Reasoning models (120b/qwen) think 20-60s before the first token —
+            // a flat 15s read timeout guaranteed fallback on exactly the strong
+            // models. Timeouts scale with the model.
+            val (connectMs, readMs) = when {
+                model.contains("120b") -> 10_000 to 60_000
+                model.contains("qwen") -> 10_000 to 45_000
+                else -> 8_000 to 20_000
+            }
+            connection.connectTimeout = connectMs
+            connection.readTimeout = readMs
 
             val payload = body.toString().toByteArray(Charsets.UTF_8)
             connection.setFixedLengthStreamingMode(payload.size)
@@ -95,12 +116,15 @@ object GroqLlamaScorer {
                 throw IllegalStateException("Groq $code: ${errBody.take(300)}")
             }
             val response = connection.inputStream.bufferedReader().use { it.readText() }
-            val content = JSONObject(response)
+            val message = JSONObject(response)
                 .optJSONArray("choices")
                 ?.optJSONObject(0)
                 ?.optJSONObject("message")
-                ?.optString("content", "")
-                .orEmpty()
+            // Reasoning models (gpt-oss/qwen) can put the answer in `reasoning`
+            // with `content` empty — treating that as failure wasted the whole
+            // fallback chain on a successful call.
+            val content = message?.optString("content", "").orEmpty()
+                .ifBlank { message?.optString("reasoning", "").orEmpty() }
             if (content.isBlank()) throw IllegalStateException("Empty Groq response")
             return parseVerdict(content, transcript)
         } finally {
@@ -169,16 +193,8 @@ object GroqLlamaScorer {
     private fun wordCount(text: String): Int =
         if (text.isBlank()) 0 else text.trim().split(Regex("\\s+")).count { it.isNotBlank() }
 
-    private const val SYSTEM_PROMPT = """You are VoiceGuard — real-time scam call detector.
-
-INPUT: a 5-second transcript chunk from an ongoing phone call (may be English, Turkish, Azerbaijani, Russian). Multilingual: keep transcript language intact.
-
-TASK: Score SCAM risk for THIS chunk only. Be precise. Rules:
-- risk 0=safe, 1-24=low, 25-59=suspicious, 60-100=scam. Be conservative if transcript <6 words => risk 0 and empty reasons/keywords.
-- Detect: OTP/password, bank/police/IRS impersonation, urgency/pressure, gift card/wire/crypto, prize/lottery, threat arrest/lawsuit, request bank/SSN/medicare, crypto investment, tech support, grandparent emergency.
-- Output STRICT JSON only, no markdown, no extra keys, EXACT schema:
-{"risk": 0-100, "keywords": ["exact phrase from transcript"], "reasons": ["one-sentence English reason"], "verdict": "safe|suspicious|scam|pending"}
-- keywords must be verbatim substrings from transcript. reasons in English, 1 per pattern.
-- Never hallucinate. If transcript is empty or greeting only, risk=0.
-- Example for "Hello, this is your bank security department, your card is blocked, please give your OTP": {"risk": 85, "keywords": ["bank security department", "card is blocked", "OTP"], "reasons": ["Impersonates bank security", "Urgency / claims card blocked", "Requests OTP"], "verdict": "scam"}"""
+    private const val SYSTEM_PROMPT = """You are VoiceGuard, real-time scam call detector. Input is a transcript chunk (English, Turkish, Azerbaijani, Russian — keep language intact). Score SCAM risk for THIS chunk: 0=safe, 1-24=low, 25-59=suspicious, 60-100=scam. If <6 words or greeting only: risk 0, empty reasons/keywords.
+Detect: OTP/password requests, bank/police impersonation, urgency/pressure, gift card/wire/crypto, prize/lottery, arrest threats, SSN/bank details requests, crypto investment, tech support, family emergency.
+Output STRICT JSON only, exact schema: {"risk": 0-100, "keywords": ["verbatim phrase from transcript"], "reasons": ["one-sentence English reason"], "verdict": "safe|suspicious|scam|pending"}
+Example: "Hello, this is bank security, your card is blocked, give your OTP" -> {"risk": 85, "keywords": ["bank security", "card is blocked", "OTP"], "reasons": ["Impersonates bank security", "Urgency: claims card blocked", "Requests OTP"], "verdict": "scam"}"""
 }
